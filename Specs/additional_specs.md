@@ -81,7 +81,7 @@ Record each result below. If any step fails, stop and report before phase 2. (Re
 - [x] 2 — **Passed.** Serial USB Terminal (usb-serial-for-android) connects and talks to the board.
 - [—] 3 — **Dropped by Master:** `termux-usb` is not something boady needs to consider, because the backend never touches USB (D17).
 - [x] 4 — **Passed.** Claude Code runs in Termux.
-- [x] 5 — **Passed.** Claude Code in Termux signs in to the subscription account. Not recorded: whether this was `claude setup-token` (the spec's path) or `/login`, and which Termux build (Play or F-Droid/GitHub) was used.
+- [ ] 5 — **Partly verified.** Claude Code in Termux signs in to the subscription account with `/login`. `claude setup-token` (the spec's path, used to avoid the ~24 h expiry of `/login` on Termux) has **not been tested yet**. Termux build (Play or F-Droid/GitHub) not recorded.
 
 **Impact of failure 1.** Phone browser mode has no hardware access on the target phone: on the phone, only the APK's native serial (usb-serial-for-android, the same library Serial USB Terminal uses, which works) can reach the board. Phone Chrome stays usable in no-hardware mode (chat and mirror editing). Desktop Chrome is unaffected, so phases 2 and 3 (desktop + board) are technically unaffected. The phase 4 acceptance ("install from scratch on the Pixel 10 Pro and run the phase 2 loop", with phone Chrome browser mode in its scope) cannot pass without the APK. The spec says to pause on any pre-check failure, so **nothing beyond phase 1 is started until Master decides how to change the spec.**
 
