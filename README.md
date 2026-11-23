@@ -1,2 +1,49 @@
 # boady
-Your microcontroller coding buddy
+
+Your microcontroller coding buddy.
+
+boady lets you do agent coding for **CircuitPython** and **MicroPython** boards with Claude Code, from a computer or an Android phone. Claude Code runs in a small backend on your own device and signs in with your Claude subscription (no API key). The web frontend shows the conversation and, in later releases, talks to your board over USB.
+
+> Status: phase 1 of 5 — chat, project files, git and settings work on a computer. Board connection (serial console, sync, plotter, libraries) arrives in phase 2. See `Specs/additional_specs.md`.
+
+## Install (computer)
+
+Requirements: Python 3.10+, git, and a working [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI that is logged in (`claude` on your PATH). `gh` is optional, for creating GitHub repositories.
+
+```bash
+git clone https://github.com/urfdvw/boady.git
+```
+
+```bash
+cd boady && pip install -r src/backend/requirements.txt
+```
+
+```bash
+python run.py
+```
+
+`run.py` prints a pairing code and a link like `http://127.0.0.1:8765/#token=…`. Open the link in Chrome; the page remembers the code. To see the code again: `python run.py --show-token`. The backend only listens on 127.0.0.1.
+
+## Using boady
+
+- **Projects page**: create a project (name + CircuitPython or MicroPython, optionally a private GitHub repo), clone an existing repository, open or delete projects. Each project is a git repository under `~/.boady/projects/` with this layout:
+
+  ```
+  <project>/
+  ├── src/        # goes to the board (code.py / main.py, lib/, CIRCUIT.md)
+  ├── boady.json  # project type, fixed at creation
+  ├── CLAUDE.md   # references and general way of working
+  ├── DESIGN.md   # goals and architecture
+  └── README.md
+  ```
+
+- **Tabs**: Chat, Files, Version, Serial, Plot, Library, Device, Settings. Click a tab to open it; on a computer Ctrl/Cmd-click opens the two most recently used tabs side by side; on a touch screen press two tabs with two fingers. Landscape puts the tab bar on top and splits left/right; portrait puts it on the left and splits top/bottom.
+- **Chat**: Claude edits the project mirror. Reading and editing inside the project is automatic; anything outside the project, git commands that change history, and uploads to the board ask for your approval in the chat. Stop a turn with the stop button.
+- **Version**: see changed files and their diff, commit, reset one file or everything, push (or create a GitHub repo). boady never commits or pushes on its own.
+- **Settings**: language (English / 中文), account status, pairing code reset, project list.
+
+Your conversation is tied to the project: closing the browser or restarting the backend resumes the same Claude session.
+
+## Development
+
+See `CLAUDE.md` for build and test commands and `Specs/specs.md` for the architecture.

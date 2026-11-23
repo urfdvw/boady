@@ -1,0 +1,4 @@
+claude-agent-sdk==0.2.187
+aiohttp==3.14.5
+circup==3.2.1
+mpremote==1.29.0

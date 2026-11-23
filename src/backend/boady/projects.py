@@ -1,0 +1,151 @@
+"""Project lifecycle: create (skeleton), clone (with type check), delete."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import shutil
+from pathlib import Path
+from typing import Any, Awaitable, Callable
+
+from . import gitops, prompts
+from .config import PROJECT_TYPES, SKELETON_DIR
+from .proc import ProcError, run
+
+log = logging.getLogger("boady.projects")
+
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+TYPE_LABEL = {"circuitpython": "CircuitPython", "micropython": "MicroPython"}
+ENTRY_FILE = {"circuitpython": "code.py", "micropython": "main.py"}
+
+
+class ProjectError(Exception):
+    pass
+
+
+def validate_name(name: str) -> str:
+    name = (name or "").strip()
+    if not NAME_RE.match(name):
+        raise ProjectError("invalid_name")
+    return name
+
+
+def read_type(root: Path) -> str | None:
+    try:
+        data = json.loads((root / "boady.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    t = data.get("type") if isinstance(data, dict) else None
+    return t if t in PROJECT_TYPES else None
+
+
+def write_type(root: Path, project_type: str) -> None:
+    (root / "boady.json").write_text(json.dumps({"type": project_type}, indent=2) + "\n", encoding="utf-8")
+
+
+def _render(text: str, name: str, project_type: str) -> str:
+    return text.replace("{{name}}", name).replace("{{type}}", project_type).replace("{{type_label}}", TYPE_LABEL[project_type])
+
+
+def write_skeleton(root: Path, name: str, project_type: str) -> None:
+    (root / "src").mkdir(parents=True, exist_ok=True)
+    write_type(root, project_type)
+    (root / "CLAUDE.md").write_text(_render(prompts.project_claude_md(project_type), name, project_type), encoding="utf-8")
+    for fname, dest in (("DESIGN.md", "DESIGN.md"), ("README.md", "README.md"), ("CIRCUIT.md", "src/CIRCUIT.md")):
+        text = (SKELETON_DIR / fname).read_text(encoding="utf-8")
+        (root / dest).write_text(_render(text, name, project_type), encoding="utf-8")
+    entry = ENTRY_FILE[project_type]
+    shutil.copyfile(SKELETON_DIR / entry, root / "src" / entry)
+
+
+async def create(projects_dir: Path, name: str, project_type: str) -> Path:
+    name = validate_name(name)
+    if project_type not in PROJECT_TYPES:
+        raise ProjectError("invalid_type")
+    root = projects_dir / name
+    if root.exists():
+        raise ProjectError("name_taken")
+    root.mkdir(parents=True)
+    try:
+        write_skeleton(root, name, project_type)
+        await gitops.init(root)
+        await gitops.commit(root, "Create boady project")
+    except Exception:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+    return root
+
+
+async def create_github_remote(root: Path, name: str, private: bool = True) -> str:
+    """``gh repo create`` (private by default) and push."""
+    vis = "--private" if private else "--public"
+    res = await run(["gh", "repo", "create", name, vis, "--source", str(root), "--remote", "origin", "--push"], cwd=root, timeout=600)
+    if not res.ok:
+        raise ProjectError((res.stderr or res.stdout).strip() or "gh repo create failed")
+    return (res.stdout + res.stderr).strip()
+
+
+def name_from_url(url: str) -> str:
+    base = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    if base.endswith(".git"):
+        base = base[:-4]
+    base = re.sub(r"[^A-Za-z0-9._-]", "-", base).strip("-.") or "project"
+    return base[:64]
+
+
+def unique_name(projects_dir: Path, base: str, taken: set[str]) -> str:
+    name, i = base, 2
+    while name in taken or (projects_dir / name).exists():
+        name = f"{base}-{i}"
+        i += 1
+    return name
+
+
+Classifier = Callable[[Path], Awaitable[dict[str, Any]]]
+
+
+async def clone(projects_dir: Path, url: str, taken: set[str], classify: Classifier) -> tuple[Path, str, str]:
+    """Clone a repo. Returns (root, name, type). Raises ProjectError if unfit."""
+    url = (url or "").strip()
+    if not url or url.startswith("-") or any(c in url for c in "\n\r\0 "):
+        raise ProjectError("invalid_url")
+    name = unique_name(projects_dir, name_from_url(url), taken)
+    root = projects_dir / name
+    try:
+        await run(["git", "clone", "-q", "--", url, str(root)], check=True, timeout=900)
+    except ProcError as e:
+        shutil.rmtree(root, ignore_errors=True)
+        raise ProjectError(f"clone_failed: {e}") from e
+    project_type = read_type(root)
+    if project_type is None:
+        try:
+            verdict = await classify(root)
+        except Exception as e:
+            shutil.rmtree(root, ignore_errors=True)
+            raise ProjectError(f"classify_failed: {e}") from e
+        if verdict.get("type") not in PROJECT_TYPES:
+            shutil.rmtree(root, ignore_errors=True)
+            raise ProjectError("repo_unfit: " + str(verdict.get("reason") or "type could not be determined"))
+        project_type = verdict["type"]
+        write_type(root, project_type)  # left uncommitted: git is manual
+    return root, name, project_type
+
+
+def delete_dir(projects_dir: Path, root: Path) -> None:
+    root_r, base = root.resolve(), projects_dir.resolve()
+    if base not in root_r.parents:
+        raise ProjectError("refusing to delete a directory outside the projects folder")
+    shutil.rmtree(root_r, ignore_errors=True)
+
+
+def parse_verdict(text: str) -> dict[str, Any]:
+    """Extract the last JSON object from the classifier's final answer."""
+    for m in reversed(list(re.finditer(r"\{[^{}]*\}", text or ""))):
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and "type" in data:
+            return data
+    return {"type": "reject", "reason": "no verdict"}

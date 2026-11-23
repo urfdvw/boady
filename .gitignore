@@ -1,0 +1,12 @@
+# dependencies and caches
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# APK signing key: stays in the project directory, never committed (keep a separate backup!)
+*.jks
+*.keystore
+keystore.properties
+src/android/signing/
