@@ -40,7 +40,7 @@ Nov 21, 2026 · @River
 
 **部署形态**
 
-- **手机（第一步）**：后端在 Termux，前端为 APK（可后台运行）或手机 Chrome 网页。
+- **手机（第一步）**：后端在 Termux，前端为 APK（可后台运行）。手机 Chrome 网页不是支持的形态（预检中 Pixel 10 Pro 的 Chrome 无法连接 USB 串口）；共用的网页代码在手机 Chrome 上即使能用也只算附带，不做测试。
 - **手机（未来）**：后端在 APK 内置的 Linux 沙盒中，前后端同属一个 App。
 - **电脑**：后端在本机，前端为桌面 Chrome 网页；也是主要的调试环境。
 
@@ -197,7 +197,7 @@ REPL 串口的读写两种类型完全相同；唯一差别是数据串口通常
 
 **运行形态**
 
-- **浏览器模式**（电脑 Chrome、手机 Chrome）：网页自己连 WebSocket，硬件用 Web Serial（Android Chrome 148 起可用）和 File System Access。手机上切到后台时硬件调用会暂停，适合盯着屏幕使用。
+- **浏览器模式**（电脑 Chrome）：网页自己连 WebSocket，硬件用 Web Serial 和 File System Access。电脑端必备。Android 上只测试 APK 模式，手机 Chrome 不做测试。
 - **APK 模式**：原生外壳 + WebView 加载同一份网页（可用 Capacitor 搭建）。WebSocket 连接与 USB 由原生前台服务持有，WebView 通过 JS bridge 与服务通信；切到后台不影响 agent。串口用 usb-serial-for-android（在 Android 上提供与 Web Serial 同形的 `navigator.serial` shim），MSC 用 SAF。
 - **无硬件模式**：只有对话与镜像编辑，用于调试界面。
 
@@ -357,7 +357,7 @@ REPL 串口的读写两种类型完全相同；唯一差别是数据串口通常
 **目标手机：Pixel 10 Pro**
 
 - 支持 OTG 主机模式；Termux 里跑 Claude Code 已有实例。
-- **串口未经验证**（Pixel 7 上曾遇到串口封闭）。开工前实测：① Chrome 打开 Google Chrome Labs 的 serial-terminal 测 Web Serial；② Serial USB Terminal（Kai Morich，基于 usb-serial-for-android）测原生通道；③ `termux-usb -l` 看系统层是否识别设备。
+- **串口预检结果**（Pixel 7 上曾遇到串口封闭）：Chrome 的 Web Serial 连不上 USB 串口；Serial USB Terminal（Kai Morich，基于 usb-serial-for-android）的原生通道可用，因此手机上只走 APK 的原生通道。后端不碰 USB，`termux-usb` 不在考虑范围内。
 - 高级保护的 USB 保护开启时，锁屏期间新连接被阻止；板子硬复位引起的重枚举会连不回来。agent 运行期间保持解锁，或关闭该项。
 
 ## 库管理与 Git 备份
@@ -424,18 +424,18 @@ REPL 串口的读写两种类型完全相同；唯一差别是数据串口通常
 
 | 风险 | 影响 | 应对 |
 | --- | --- | --- |
-| Pixel 10 Pro 串口未验证（Pixel 7 曾封闭） | 整个方案在该手机上不成立 | 开工前按「设备连接」的三项快速测试验证 |
+| Pixel 10 Pro 串口（Pixel 7 曾封闭） | 整个方案在该手机上不成立 | 已预检：Web Serial 不可用，原生通道可用；手机只用 APK |
 | Claude Code 无 Android 版本，靠兼容方案运行 | 更新后可能起不来 | 锁定版本，升级经验证后由前端触发；备选 proot Ubuntu |
 | Termux Play 版兼容性 | Claude Code 或 RUN\_COMMAND 不可用 | 实测；必要时指定 F-Droid / GitHub 版 |
 | Termux 被系统杀掉 | agent 中断 | wake lock、电池优化引导、前端检测并用 RUN\_COMMAND 重启 |
 | USB 保护（高级保护） | 锁屏时板子重枚举后连不回 | agent 运行时保持解锁或关闭该项 |
 | 串口 raw REPL 写文件不稳 | 同步失败或文件损坏 | 分块 + 校验 + 重试，写后回读哈希 |
-| 手机浏览器模式后台冻结 | 硬件调用暂停 | 硬件 RPC 超时返回明确错误；需后台运行时用 APK |
 | `setup-token` 在 Termux 上的 OAuth 兼容性 | 无法登录 | 尽早验证；备选在 pty 中跑 `/login` |
 
 **待定**
 
-- [ ] Pixel 10 Pro 串口实测（Web Serial / 原生 / termux-usb）——需主人，预检阶段
+- [x] Pixel 10 Pro 串口实测：Web Serial 不可用，原生通道可用（见 additional\_specs.md）
+- [ ] Termux 中 `claude setup-token` 实测（`/login` 已确认可登录）——需主人
 - [ ] Termux Play 版上 Claude Code 与 RUN\_COMMAND 实测——需主人，预检阶段
 - [ ] 各标签内部的布局与交互：已有初稿，主人试用后补充——需主人
 - [ ] Bash 白名单还是全部封装为工具
@@ -497,8 +497,8 @@ boady/
 | 第一阶段：后端与对话 | 仓库骨架、run.py、Python 壳（Agent SDK 会话、系统提示注入、审批）、WebSocket 协议与配对、项目表与 session id 持久化、引导页（新建 / 克隆 / 选择 / 删除）、网页前端的对话、文件、版本、设置标签与分屏规则、中英双语 | 电脑浏览器中新建项目、对话、审批、查看 diff、手动 commit；重启后端后会话仍能恢复 | 电脑，无硬件 |
 | 第二阶段：CircuitPython | 六个 MCP 工具与串口环形缓冲区、Web Serial（REPL 与数据串口）、设备事件与 UID 探测、板子绑定、前端的 CircuitPython 数据逻辑（FSA 的 MSC 与串口 raw REPL 两条通道、运行时写权限切换）、双向同步、绘图、circup、库与设备标签 | agent 修改 code.py、触发同步、读取 Traceback 并自行修复的闭环跑通；重新连接同一块板子时自动回到对应项目与会话 | 电脑 Chrome + CircuitPython 板 |
 | 第三阶段：MicroPython | 前端的 MicroPython 文件读写逻辑（只有串口 raw REPL）、`machine.unique_id()` 与 ID 文件、后端 `mpremote mip` 写入镜像、MicroPython 的系统提示与项目模板 | 同第二阶段的闭环，在 MicroPython 板上跑通 | 电脑 Chrome + MicroPython 板 |
-| 第四阶段：Termux | 一行安装脚本、前端内的 Claude 与 GitHub 登录、保活引导、手机 Chrome 浏览器模式 | 在 Pixel 10 Pro 上从零安装，并跑通第二阶段的闭环 | 手机 + 板子 |
-| 第五阶段：APK | 原生外壳 + WebView、前台服务、串口 shim、RUN\_COMMAND 启停、对话角标 | 切到后台后 agent 仍能完成同步与测试 | 手机 + 板子 |
+| 第四阶段：Termux | 一行安装脚本、前端内的 Claude 与 GitHub 登录、保活引导 | 与第五阶段合并验收 | 手机 + 板子 |
+| 第五阶段：APK | 原生外壳 + WebView、前台服务、串口 shim、RUN\_COMMAND 启停、对话角标 | 第四、五阶段合并验收，同时测试 APK 前端与 Termux 后端：在 Pixel 10 Pro 上从零安装，用 APK 跑通第二阶段的闭环；切到后台后 agent 仍能完成同步与测试 | 手机 + 板子 |
 
 未来路线的各项（集成 Linux、BLE 与 WiFi 连接）不在本次范围内。
 

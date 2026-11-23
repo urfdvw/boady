@@ -90,7 +90,11 @@ Record each result below. If any step fails, stop and report before phase 2. (Re
 **D18 — Android Chrome is an untested bonus (Master, 2026-11-23).** The web frontend stays mandatory because it is the desktop frontend. Android Chrome may keep working as a side effect of the shared web code, but it is not a supported or tested target. On Android only the app (APK) is tested. Consequences for `specs.md` when merged back:
 - 「前端与 UI 职责 / 运行形态」「部署形态」: phone Chrome becomes an untested bonus, not a deployment form.
 - 「设备连接 / 目标手机」: the Web Serial test is no longer a requirement; the native channel (passed) is the phone path.
-- 「实现顺序」: phase 4 lists "手机 Chrome 浏览器模式" and its acceptance runs the phase 2 loop on the Pixel 10 Pro. Without the APK there is no way to use a board on the phone, so that acceptance cannot be met within phase 4 as written. How phases 4 and 5 are re-cut is not decided yet.
+- 「实现顺序」: resolved by D19.
+
+**D19 — Phases 4 and 5 are accepted together (Master, 2026-11-23).** Phone Chrome browser mode is removed from phase 4. Phase 4 (install script, login in the frontend, keep-alive guide) has no separate phone acceptance; one joint acceptance at the end of phase 5 tests the APK frontend and the Termux backend together: install from scratch on the Pixel 10 Pro, run the phase 2 loop through the APK, and the agent still finishes sync and testing while the app is in the background.
+
+**Merged into specs.md (2026-11-23):** D17, D18, D19 and the pre-check results — 「部署形态」, 「运行形态」, 「目标手机」, risk table, pending list, 「实现顺序」.
 
 ## Phase 1 manual test checklist (desktop, no hardware)
 
