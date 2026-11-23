@@ -6,12 +6,12 @@ Technical and design decisions made during implementation (spec「交接说明�
 
 | Phase | State |
 | --- | --- |
-| Pre-check (needs Master) | **Not done.** Checklist below; results go into this file. |
+| Pre-check (needs Master) | **Done 2026-11-23 — one failure:** Chrome on the Pixel 10 Pro cannot open the USB serial port (Web Serial). Per the spec, work is paused until Master decides how the phase plan changes (see "Pre-check results"). |
 | Phase 1: backend & chat | Implemented, automated tests pass, acceptance run done in desktop Chromium (create project → chat → approval → diff → commit → backend restart → session resumed). |
 | Phase 2: CircuitPython | Backend groundwork only (ring buffers, hw RPC, the six MCP tools, mirror sync logic). No Web Serial / MSC frontend, no board identification yet. |
 | Phase 3–5 | Not started. |
 
-Phase 1 does not depend on any pre-check result (desktop, no hardware), so it was built first. Phase 2 and later should wait for the pre-check results.
+Phase 1 does not depend on any pre-check result (desktop, no hardware), so it was built first.
 
 ## Decisions
 
@@ -67,7 +67,7 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 
 ## Pre-check checklist (needs Master)
 
-Record each result below. If any step fails, stop and report before phase 2.
+Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)
 
 1. **Web Serial in Chrome on the Pixel 10 Pro.** Plug a CircuitPython board in via USB-C OTG. Open https://googlechromelabs.github.io/serial-terminal/ in Chrome, tap Connect, pick the board, press Enter: a `>>>` prompt (or program output) must appear. Note the Chrome version.
 2. **Native serial.** Install "Serial USB Terminal" (Kai Morich) from Play. Connect to the same board (and, if available, a CH34x / CP210x board such as an ESP32 dev board): typing must reach the REPL.
@@ -75,13 +75,17 @@ Record each result below. If any step fails, stop and report before phase 2.
 4. **Claude Code in Termux.** Install with the community method, set `DISABLE_AUTOUPDATER=1`, run `claude --version` and one prompt (`claude -p "say hi"`). Note which Termux build (Play or F-Droid/GitHub) and the CLI version.
 5. **setup-token.** In Termux run `claude setup-token`, complete the browser authorisation, paste the code back; then `CLAUDE_CODE_OAUTH_TOKEN=<token> claude -p "say hi"` must work.
 
-Results:
+## Pre-check results (reported by Master, 2026-11-23)
 
-- [ ] 1 —
-- [ ] 2 —
-- [ ] 3 —
-- [ ] 4 —
-- [ ] 5 —
+- [x] 1 — **Failed.** Chrome on the Pixel 10 Pro cannot connect to the USB serial port. (Chrome version not recorded.)
+- [x] 2 — **Passed.** Serial USB Terminal (usb-serial-for-android) connects and talks to the board.
+- [—] 3 — **Dropped by Master:** `termux-usb` is not something boady needs to consider, because the backend never touches USB (D17).
+- [x] 4 — **Passed.** Claude Code runs in Termux.
+- [x] 5 — **Passed.** Claude Code in Termux signs in to the subscription account. Not recorded: whether this was `claude setup-token` (the spec's path) or `/login`, and which Termux build (Play or F-Droid/GitHub) was used.
+
+**Impact of failure 1.** Phone browser mode has no hardware access on the target phone: on the phone, only the APK's native serial (usb-serial-for-android, the same library Serial USB Terminal uses, which works) can reach the board. Phone Chrome stays usable in no-hardware mode (chat and mirror editing). Desktop Chrome is unaffected, so phases 2 and 3 (desktop + board) are technically unaffected. The phase 4 acceptance ("install from scratch on the Pixel 10 Pro and run the phase 2 loop", with phone Chrome browser mode in its scope) cannot pass without the APK. The spec says to pause on any pre-check failure, so **nothing beyond phase 1 is started until Master decides how to change the spec.**
+
+**D17 — termux-usb is out of scope (Master).** The backend never touches USB, so `termux-usb` is not a pre-check item and not a fallback. `specs.md` still lists it under「设备连接 / 目标手机」and in the pending list; it should be removed when this decision is merged back.
 
 ## Phase 1 manual test checklist (desktop, no hardware)
 
