@@ -6,7 +6,7 @@ Technical and design decisions made during implementation (spec「交接说明�
 
 | Phase | State |
 | --- | --- |
-| Pre-check (needs Master) | **Done 2026-11-23 — one failure:** Chrome on the Pixel 10 Pro cannot open the USB serial port (Web Serial). Per the spec, work is paused until Master decides how the phase plan changes (see "Pre-check results"). |
+| Pre-check (needs Master) | **Done 2026-11-23.** Web Serial fails in Chrome on the Pixel 10 Pro; resolved by Master's decision D18 (Android Chrome is an untested bonus; on Android only the app is tested). Still open: `claude setup-token` untested (item 5). |
 | Phase 1: backend & chat | Implemented, automated tests pass, acceptance run done in desktop Chromium (create project → chat → approval → diff → commit → backend restart → session resumed). |
 | Phase 2: CircuitPython | Backend groundwork only (ring buffers, hw RPC, the six MCP tools, mirror sync logic). No Web Serial / MSC frontend, no board identification yet. |
 | Phase 3–5 | Not started. |
@@ -83,9 +83,14 @@ Record each result below. If any step fails, stop and report before phase 2. (Re
 - [x] 4 — **Passed.** Claude Code runs in Termux.
 - [ ] 5 — **Partly verified.** Claude Code in Termux signs in to the subscription account with `/login`. `claude setup-token` (the spec's path, used to avoid the ~24 h expiry of `/login` on Termux) has **not been tested yet**. Termux build (Play or F-Droid/GitHub) not recorded.
 
-**Impact of failure 1.** Phone browser mode has no hardware access on the target phone: on the phone, only the APK's native serial (usb-serial-for-android, the same library Serial USB Terminal uses, which works) can reach the board. Phone Chrome stays usable in no-hardware mode (chat and mirror editing). Desktop Chrome is unaffected, so phases 2 and 3 (desktop + board) are technically unaffected. The phase 4 acceptance ("install from scratch on the Pixel 10 Pro and run the phase 2 loop", with phone Chrome browser mode in its scope) cannot pass without the APK. The spec says to pause on any pre-check failure, so **nothing beyond phase 1 is started until Master decides how to change the spec.**
+**Impact of failure 1.** Phone browser mode has no hardware access on the target phone: only the APK's native serial (usb-serial-for-android, the same library Serial USB Terminal uses, which works) can reach the board. Desktop Chrome is unaffected. Master resolved this with D18.
 
 **D17 — termux-usb is out of scope (Master).** The backend never touches USB, so `termux-usb` is not a pre-check item and not a fallback. `specs.md` still lists it under「设备连接 / 目标手机」and in the pending list; it should be removed when this decision is merged back.
+
+**D18 — Android Chrome is an untested bonus (Master, 2026-11-23).** The web frontend stays mandatory because it is the desktop frontend. Android Chrome may keep working as a side effect of the shared web code, but it is not a supported or tested target. On Android only the app (APK) is tested. Consequences for `specs.md` when merged back:
+- 「前端与 UI 职责 / 运行形态」「部署形态」: phone Chrome becomes an untested bonus, not a deployment form.
+- 「设备连接 / 目标手机」: the Web Serial test is no longer a requirement; the native channel (passed) is the phone path.
+- 「实现顺序」: phase 4 lists "手机 Chrome 浏览器模式" and its acceptance runs the phase 2 loop on the Pixel 10 Pro. Without the APK there is no way to use a board on the phone, so that acceptance cannot be met within phase 4 as written. How phases 4 and 5 are re-cut is not decided yet.
 
 ## Phase 1 manual test checklist (desktop, no hardware)
 
@@ -96,7 +101,7 @@ Record each result below. If any step fails, stop and report before phase 2. (Re
 5. Ask Claude to `git commit`: an approval card appears. Ask for `cat /etc/passwd` via Bash: it is refused without a card.
 6. Version tab: click the change to see the diff, commit with a message, try reset of one file and reset all (confirmations shown).
 7. Stop the backend (Ctrl-C) and start it again: the page reconnects, the conversation is still there, and Claude remembers it.
-8. Tabs: click opens one tab; Ctrl/Cmd-click opens the two most recent; narrow the window until it is taller than wide — the bar moves to the left with icons only and the split becomes top/bottom. On a phone: press two tabs with two fingers.
+8. Tabs: click opens one tab; Ctrl/Cmd-click opens the two most recent; narrow the window until it is taller than wide — the bar moves to the left with icons only and the split becomes top/bottom. (Two-finger tab selection is a touch feature; it is tested in the Android app, not in phone Chrome — D18.)
 9. Open the page in a second window: the first one shows "disconnected because another boady window connected".
 10. Settings → 中文: all UI text switches; reload keeps it.
 11. Settings → Reset pairing code: the page keeps working; a different browser needs the new code.
