@@ -34,6 +34,7 @@ class ToolContext:
     # ask the user a yes/no question in the chat; returns True if allowed
     confirm: Callable[[str, dict[str, Any]], Awaitable[bool]]
     on_mirror_changed: Callable[[], Awaitable[None]]
+    on_synced: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
 
 
 def _ok(data: Any) -> dict[str, Any]:
@@ -74,6 +75,8 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]
             return {"declined": True}
     res = await ctx.bridge.request("fs.read_all", {}, timeout=300)
     changes = sync.apply_from_device(root / "src", (res or {}).get("files", {}))
+    if ctx.on_synced:
+        await ctx.on_synced("pull", changes)
     await ctx.on_mirror_changed()
     return changes
 
@@ -91,10 +94,16 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     res = await ctx.bridge.request(
         "fs.apply", {"files": sync.encode_files(src, need), "delete": delete}, timeout=600
     ) or {}
-    return {"written": res.get("written", need), "deleted": res.get("deleted", delete)}
+    out = {"written": res.get("written", need), "deleted": res.get("deleted", delete)}
+    for k in ("channel", "restarted", "note"):
+        if k in res:
+            out[k] = res[k]
+    if ctx.on_synced:
+        await ctx.on_synced("push", out)
+    return out
 
 
-def build_server(ctx: ToolContext):
+def build_server(ctx: ToolContext, only: set[str] | None = None):
     b = ctx.bridge
 
     async def _read(port: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -151,4 +160,6 @@ def build_server(ctx: ToolContext):
             return _err(str(e))
 
     tools = [read_repl, write_repl, read_data, write_data, sync_from_device, sync_to_device]
+    if only is not None:
+        tools = [t for t in tools if t.name in only]
     return create_sdk_mcp_server("boady", "1.0.0", tools), [t.name for t in tools]

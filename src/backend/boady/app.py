@@ -25,10 +25,10 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from . import files, gitops, mcp_tools, pairing, projects, prompts
+from . import files, gitops, identify, libraries, mcp_tools, pairing, projects, prompts
 from .agent import AgentSession, claude_env, cli_path
-from .config import Paths
-from .hardware import HardwareBridge, HardwareError
+from .config import PROJECT_TYPES, Paths
+from .hardware import DeviceState, HardwareBridge, HardwareError
 from .proc import ProcError, run
 from .project_table import Project, ProjectTable
 from .util import is_within, read_json, write_json
@@ -72,6 +72,9 @@ class App:
             on_mirror_changed=self.push_state,
         )
         self.auth_status: dict[str, Any] = {"claude": None, "github": None}
+        self.tool_ctx.on_synced = self.on_synced
+        self._tasks: set[asyncio.Task] = set()
+        self._identify_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------ io
     async def send(self, msg: dict[str, Any]) -> None:
@@ -215,7 +218,7 @@ class App:
             self.resolve_permission(rid, False, message)
 
     # ------------------------------------------------------------- projects
-    async def open_project(self, project_id: str, announce: bool = True) -> Project:
+    async def open_project(self, project_id: str, announce: bool = True, device_check: bool = True) -> Project:
         p = self.table.get(project_id)
         if p is None:
             raise projects.ProjectError("unknown_project")
@@ -227,6 +230,7 @@ class App:
         if actual != p.type:
             p = self.table.update(p.id, type=actual)
         if self.project and self.project.id == p.id and self.session:
+            self.select_required = None
             return p
         await self.close_project()
         self.project = self.table.update(p.id, last_opened=time.time())
@@ -242,6 +246,8 @@ class App:
         self.session.on_tool_result = self.push_state
         if announce:
             await self.resync()
+        if device_check and self.bridge.device.uid:
+            self._spawn(self.project_for_device(explicit=True))
         return self.project
 
     async def close_project(self) -> None:
@@ -307,6 +313,10 @@ class App:
                 await self.on_device_attached(msg)
             elif t == "device.detached":
                 await self.on_device_detached()
+            elif t == "device.update":
+                if msg.get("channel") in ("msc", "serial", None):
+                    self.bridge.device.channel = msg.get("channel")
+                await self.push_state()
             elif t and t.startswith("project.") or t == "action":
                 await self.on_action(msg)
             elif t == "hello":
@@ -340,21 +350,144 @@ class App:
             await self.session.interrupt()
         await self.bridge.release_all()
 
+    def _spawn(self, coro) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+
+    async def notice(self, text: str, level: str = "info") -> None:
+        item = {"id": f"n{time.time_ns()}", "kind": "notice", "level": level, "text": text}
+        if self.session:
+            self.session.items.append(item)
+        await self.emit_agent({"kind": "item", "item": item})
+
     async def on_device_attached(self, msg: dict[str, Any]) -> None:
-        d = self.bridge.device
-        d.attached = True
+        if self._identify_task:
+            self._identify_task.cancel()
+        d = DeviceState(attached=True)
         d.usb = dict(msg.get("usb") or {})
         d.ports = [p for p in msg.get("ports", ["repl"]) if p in ("repl", "data")]
+        self.bridge.device = d
         await self.push_state()
-        # Board identification and project binding: phase 2 (see additional_specs.md).
+        self._identify_task = self._spawn(self.identify_and_bind())
 
     async def on_device_detached(self) -> None:
+        if self._identify_task:
+            self._identify_task.cancel()
+            self._identify_task = None
         await self.bridge.cancel_all("Device detached.")
-        from .hardware import DeviceState
-
         self.bridge.device = DeviceState()
         await self.bridge.release_all()
         await self.push_state()
+
+    async def identify_and_bind(self) -> None:
+        """Identification call, then the board -> project flow (spec「连接板子时」)."""
+        d = self.bridge.device
+        d.identifying, d.error = True, None
+        await self.push_state()
+        try:
+            server, _ = mcp_tools.build_server(self.tool_ctx, only={"read_repl", "write_repl"})
+            info = await identify.identify(server, self.paths.home / "identify", self.paths.claude_token_file, self.client_factory)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.warning("identification failed: %s", e)
+            if self.bridge.device is d:
+                d.identifying, d.error = False, f"identify_failed: {e}"
+                await self.bridge.release_all()
+                await self.push_state()
+            return
+        if self.bridge.device is not d:
+            return
+        await self.bridge.release_all()
+        d.identifying = False
+        d.uid, d.runtime, d.version, d.mpy_version = info["uid"], info["runtime"], info["version"], info["mpy_version"]
+        await self.push_state()
+        await self.project_for_device(explicit=False)
+
+    async def project_for_device(self, explicit: bool) -> None:
+        """Find / bind the project for the identified board.
+
+        ``explicit``: the user just opened this project; then a project bound to
+        another board is kept open (with a notice) instead of being switched.
+        """
+        d = self.bridge.device
+        uid, runtime = d.uid, d.runtime
+        if not uid:
+            return
+        if runtime not in PROJECT_TYPES:
+            d.error = f"unsupported_runtime: {runtime}"
+            await self.push_state()
+            return
+        p = self.project
+        if p is not None and p.board_uid in (None, uid):
+            if p.type != runtime:
+                await self.runtime_mismatch(p, runtime)
+                return
+            self.project = self.table.update(p.id, board_uid=uid, mpy_version=d.mpy_version)
+            await self.project_ready()
+            return
+        if p is not None and explicit:
+            await self.notice(f"board_other_project: {uid}", "warning")
+            return
+        cands = self.table.by_uid(uid)
+        if len(cands) == 1:
+            c = cands[0]
+            if c.type != runtime:
+                await self.runtime_mismatch(c, runtime)
+                return
+            await self.open_project(c.id, device_check=False)
+            self.project = self.table.update(c.id, mpy_version=d.mpy_version)
+            await self.project_ready()
+            return
+        self.select_required = {
+            "type": "project.select_required",
+            "reason": "multiple_projects" if cands else "unknown_board",
+            "uid": uid,
+            "runtime": runtime,
+            "candidates": [self._project_info(c) for c in cands] if cands else None,
+        }
+        await self.send(self.select_required)
+
+    async def runtime_mismatch(self, p: Project, runtime: str) -> None:
+        """Stop everything, tell the user, back to the project page."""
+        await self.on_interrupt()
+        await self.close_project()
+        self.select_required = {
+            "type": "project.select_required",
+            "reason": "runtime_mismatch",
+            "uid": self.bridge.device.uid,
+            "runtime": runtime,
+            "expected": p.type,
+            "project": p.name,
+            "candidates": None,
+        }
+        await self.resync()
+
+    async def project_ready(self) -> None:
+        """Project determined: resume its session, then pull the board files."""
+        await self.push_state()
+        if self.session:
+            try:
+                await self.session.connect()
+            except Exception as e:
+                await self.notice(f"Claude Code could not start: {e}", "error")
+        try:
+            res = await mcp_tools.pull_from_device(self.tool_ctx)
+        except HardwareError as e:
+            await self.notice(f"pull_failed: {e}", "error")
+            return
+        if res.get("declined"):
+            await self.notice("pull_declined", "info")
+        else:
+            await self.notice("pulled: " + json.dumps(res), "info")
+
+    async def on_synced(self, direction: str, result: dict[str, Any]) -> None:
+        summary = {k: len(v) for k, v in result.items() if isinstance(v, list)}
+        self.bridge.device.last_sync = {"time": time.time(), "direction": direction, "summary": summary}
+        if "channel" in result:
+            self.bridge.device.channel = result["channel"]
 
     # --------------------------------------------------------------- actions
     async def on_action(self, msg: dict[str, Any]) -> None:
@@ -364,7 +497,7 @@ class App:
         try:
             result = await self.run_action(str(name), params)
             await self.send({"type": "action.result", "id": rid, "ok": True, "result": result})
-        except (projects.ProjectError, files.PathError, ProcError, ValueError, HardwareError) as e:
+        except (projects.ProjectError, files.PathError, ProcError, ValueError, HardwareError, libraries.LibraryError) as e:
             await self.send({"type": "action.result", "id": rid, "ok": False, "error": str(e)})
         except Exception as e:
             log.exception("action %s failed", name)
@@ -456,6 +589,24 @@ class App:
             return res
         if name == "device.push":
             return await mcp_tools.push_to_device(self.tool_ctx)
+        # --- libraries (mirror only) ---
+        if name.startswith("lib."):
+            root = self._root()
+            ptype = self.project.type if self.project else ""
+            if name == "lib.list":
+                return {"libraries": await libraries.list_installed(ptype, root / "src")}
+            if name == "lib.search":
+                return {"results": await libraries.search(ptype, root / "src", str(p.get("query", "")))}
+            if name == "lib.install":
+                out = await libraries.install(ptype, root / "src", list(p.get("names") or []))
+            elif name == "lib.update":
+                out = await libraries.update(ptype, root / "src")
+            elif name == "lib.uninstall":
+                out = await libraries.uninstall(ptype, root / "src", list(p.get("names") or []))
+            else:
+                raise ValueError(f"unknown action: {name}")
+            await self.push_state()
+            return {"output": out}
         # --- settings ---
         if name == "prefs.set":
             for k in ("language",):

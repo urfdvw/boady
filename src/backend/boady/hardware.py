@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Awaitable, Callable
 
 from .config import HW_TIMEOUT, SERIAL_BUFFER_BYTES
@@ -34,19 +34,15 @@ class DeviceState:
     ports: list[str] = field(default_factory=list)  # which of PORTS are open
     uid: str | None = None
     runtime: str | None = None
+    version: str | None = None  # firmware version from identification
     mpy_version: int | None = None
-    channel: str | None = None  # "msc" | "serial"
+    channel: str | None = None  # "msc" | "serial" (decided by the frontend)
+    identifying: bool = False
+    error: str | None = None
+    last_sync: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "attached": self.attached,
-            "usb": self.usb,
-            "ports": self.ports,
-            "uid": self.uid,
-            "runtime": self.runtime,
-            "mpy_version": self.mpy_version,
-            "channel": self.channel,
-        }
+        return asdict(self)
 
 
 class HardwareBridge:
