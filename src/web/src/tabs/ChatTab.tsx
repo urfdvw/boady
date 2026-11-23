@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Send, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Backend, ChatItem } from "../backend";
-import { useI18n } from "../i18n";
+import { translateNotice, useI18n } from "../i18n";
 
 function Text({ text }: { text: string }) {
   // minimal markdown: fenced code blocks and inline code
@@ -106,7 +106,7 @@ function PermissionCard({ item, backend }: { item: Extract<ChatItem, { kind: "pe
 }
 
 export function ChatTab({ backend }: { backend: Backend }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const st = backend.state;
@@ -164,7 +164,7 @@ export function ChatTab({ backend }: { backend: Backend }) {
             case "notice":
               return (
                 <div key={it.id} className={`notice ${it.level}`}>
-                  {it.text}
+                  {translateNotice(lang, it.text)}
                 </div>
               );
           }

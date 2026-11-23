@@ -8,7 +8,7 @@ Technical and design decisions made during implementation (spec「交接说明�
 | --- | --- |
 | Pre-check (needs Master) | **Done 2026-11-23.** Web Serial fails in Chrome on the Pixel 10 Pro; resolved by Master's decision D18 (Android Chrome is an untested bonus; on Android only the app is tested). Still open: `claude setup-token` untested (item 5). |
 | Phase 1: backend & chat | Implemented, automated tests pass, acceptance run done in desktop Chromium (create project → chat → approval → diff → commit → backend restart → session resumed). |
-| Phase 2: CircuitPython | Backend groundwork only (ring buffers, hw RPC, the six MCP tools, mirror sync logic). No Web Serial / MSC frontend, no board identification yet. |
+| Phase 2: CircuitPython | Implemented; automated tests pass (backend with a fake Claude client and fake frontend, frontend with a fake CircuitPython board). **Acceptance on real hardware not done** — needs Master (checklist below). circup could not be exercised against the real bundle here (GitHub release downloads are blocked in the build sandbox). |
 | Phase 3–5 | Not started. |
 
 Phase 1 does not depend on any pre-check result (desktop, no hardware), so it was built first.
@@ -65,6 +65,24 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 
 **D16 — APK shell (待定).** Not decided yet; it belongs to phase 5. The adapter interfaces (`src/web/src/adapters/types.ts`) are written so that a Capacitor bridge or a hand-made WebView bridge can implement them.
 
+**D20 — CircuitPython write access over serial: remount only as a fallback (spec deviation, needs Master's approval).** The spec says `storage.unsafe_disable_usb_drive()` and then `storage.remount("/", readonly=False)`. CircuitPython's own docs (shared-bindings/storage, `main` branch) say that after `unsafe_disable_usb_drive()` CIRCUITPY is already read/write for code, and that a `remount()` done while the drive is disabled *stays in effect after `enable_usb_drive()`*; `main.c` only resets USB write access at a hard reset. Following the spec literally would leave the drive read-only for the computer after every serial sync until the board is hard-reset, which also breaks the MSC channel. Implemented: probe `hasattr(storage, "unsafe_disable_usb_drive")` and `storage.getmount("/").readonly`; if already writable, write directly (boards without MSC); otherwise `unsafe_disable_usb_drive()`, re-check, and call `remount("/", readonly=False)` only if still read-only; after writing `enable_usb_drive()`, leave raw REPL, then Ctrl-D. Old firmware without the function returns a clear error with the offline fix (upgrade, or `storage.disable_usb_drive()` in boot.py). Write access is re-checked before every apply. Code: `src/web/src/hw/cpAccess.ts`.
+
+**D21 — Autoreload around MSC syncs.** Checked in CircuitPython `main.c` / `supervisor/shared/reload.c`: `supervisor.runtime.autoreload` is turned on only at startup after a hard reset and otherwise keeps its value across soft reloads. So the frontend reads the old value, sets it to `False` over the raw REPL before writing through the drive, and restores the old value afterwards (re-enabling does not trigger a reload for the writes that happened while it was off). `sync_to_device` returns `restarted: false` for MSC (the program stays stopped at the REPL; the agent runs it with Ctrl-D) and `restarted: true` for serial (soft reload after the write, as the spec's step 4). The CircuitPython system prompt tells the agent how to read this flag. Risk to check on hardware: the host OS may cache drive writes; if code.py sometimes runs stale files after an MSC sync, a delay or a forced serial channel is needed.
+
+**D22 — Which port is the REPL.** Web Serial does not expose the USB interface number, and both CDC interfaces of a CircuitPython board share VID/PID. With two granted ports, the frontend opens both, sends Ctrl-C and Enter to each, and picks the one whose answer looks like a REPL (`>>>`, `KeyboardInterrupt`, banner); the other becomes the data port. This stops the running program, which identification does anyway. Only ports of the same VID/PID as the first granted port are used (one board at a time). The data port is granted with a second "Add data port" click (Chrome shows one port per chooser).
+
+**D23 — Safe DTR/RTS.** Every port is opened at 115200 baud and then set to DTR = RTS = asserted. Native USB CDC boards need DTR to send console output; on ESP32-style auto-reset circuits both-asserted is the no-reset state. Not verified on hardware yet (CH34x/CP210x ESP32 boards matter mostly for phase 3).
+
+**D24 — Identification call.** One-shot `ClaudeSDKClient` in `$BOADY_HOME/identify` (not a project directory), no built-in tools, only `mcp__boady__read_repl` / `write_repl` (`permission_mode="dontAsk"` + `allowed_tools`), prompt `src/prompts/tasks/identify_board.md`. The answer line is `BOADY_ID uid=<HEX> runtime=<name> version=<x.y.z> mpy=<n|none>` (UID uppercase hex, same as `boot_out.txt`). MicroPython falls back to `/.boady_id` as the spec says. The frontend re-announces the board after every backend reconnect, so identification runs again then. Failures show in the Device tab (`identify_failed: …`).
+
+**D25 — Board → project details.** Follows spec「连接板子时」. Additions: a project created or cloned while an identified board is connected is bound to it immediately (spec step 2, "刚新建或克隆"); opening a project that is bound to a *different* board keeps it open, shows a notice and does not pull; for an unknown board the project page lists all projects (create, clone, or open one — opening an unbound project binds it). Runtime mismatch interrupts the agent, cancels hardware requests, closes the project and shows the reason on the project page.
+
+**D26 — Serial file transfer.** Listing uses `os.listdir` + `os.stat` (CircuitPython has no `os.ilistdir`). Reads print `repr()` of 512-byte chunks in one exec per file; writes send 256-byte `b'…'` literals (as mpremote). After each write the file is verified by SHA-256 (on-board `hashlib` if present, otherwise read back) and retried once. Directories that become empty after deletions are removed. While a raw REPL session runs, its bytes are not forwarded to the backend buffers; the frontend inserts `[boady: syncing files…]` / `[boady: sync finished]` instead.
+
+**D27 — Library tab (CircuitPython).** Backend actions `lib.list` (circup `freeze` + `list`), `lib.search` (`show <match>`), `lib.install`, `lib.update` (`update --all`, no prompts), `lib.uninstall`, always with `--path <project>/src`. circup reads the version and board id from `src/boot_out.txt`, so the board must have been connected once; otherwise the error `no_boot_out` is shown. Bundles are cached by circup in the backend's user data directory.
+
+**D28 — User console.** The console writes straight to the port from the frontend and is refused (read-only notice) while the agent holds the port lock (D8) or a file sync uses the REPL port. Enter sends the line plus `\r`; Ctrl-C / Ctrl-D buttons send `\x03` / `\x04`.
+
 ## Pre-check checklist (needs Master)
 
 Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)
@@ -109,3 +127,21 @@ Record each result below. If any step fails, stop and report before phase 2. (Re
 9. Open the page in a second window: the first one shows "disconnected because another boady window connected".
 10. Settings → 中文: all UI text switches; reload keeps it.
 11. Settings → Reset pairing code: the page keeps working; a different browser needs the new code.
+
+## Phase 2 manual test checklist (desktop Chrome + CircuitPython board)
+
+Use a board with native USB (e.g. QT Py RP2040, Feather ESP32-S3) running a recent CircuitPython 9.x. Start the backend with `python run.py` and open the link in desktop Chrome.
+
+1. **Connect.** Create a CircuitPython project, open the Device tab, click "Connect board" and pick the board. Status shows "Identifying…", then UID / runtime / firmware. The UID must equal the `UID:` line of `boot_out.txt`.
+2. **Pull on connect.** The chat shows "Pulled the board files into src/…"; Version tab lists the board's files as changes against the skeleton. Commit them.
+3. **Dirty mirror.** Edit `src/code.py` in the Files tab without committing, click "Pull from board": an approval card lists `src/code.py`; Deny keeps your edit; Allow overwrites it.
+4. **Serial sync (no drive chosen).** Ask Claude to change `code.py` to print a counter every second and sync it. Expect: the drive disappears from the computer for a few seconds, comes back writable, the board soft-reloads, Claude reads the output. Then check the computer can still write to CIRCUITPY (copy a file onto it) — this verifies D20.
+5. **Closed loop.** Ask Claude to introduce a bug on purpose, sync, read the Traceback and fix it. This is the spec's acceptance loop.
+6. **MSC channel.** Device tab → "Choose CIRCUITPY drive" and pick the mounted drive. Ask Claude to sync again: channel shows `msc`, the drive does not disappear, the program stays stopped until Claude sends Ctrl-D. Check that `code.py` runs the new content (D21 cache risk).
+7. **Data port.** Add `import usb_cdc; usb_cdc.enable(console=True, data=True)` to `boot.py`, sync, hard-reset the board. Click "Add data port" and pick the second interface. The Serial tab shows REPL and Data; a program writing to `usb_cdc.data` appears under Data; Claude can use `read_data`.
+8. **Console lock.** While Claude writes to the REPL, the Serial tab input is disabled with the read-only notice; it unlocks at the end of the turn.
+9. **Plot.** Run `while True: print((time.monotonic() % 5, math.sin(time.monotonic())))` with a short sleep: two curves scroll; Pause/Resume and Clear work.
+10. **Libraries.** Library tab: search `bme280`, install, see it in `src/lib` and in the Version tab; update all; remove. Sync to the board.
+11. **Reconnect.** Unplug and replug the board (Chrome reconnects automatically to a granted port): the same project opens and the conversation continues. With two projects bound to the same board, the project page asks which one.
+12. **Runtime mismatch.** Create a MicroPython project and connect the CircuitPython board: everything stops and the project page explains the mismatch.
+13. **Old firmware (optional).** On CircuitPython 8.x without `unsafe_disable_usb_drive`, a serial sync fails with the "upgrade or boot.py" message.

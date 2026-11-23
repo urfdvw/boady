@@ -29,3 +29,19 @@ export const I18nContext = createContext<{ lang: Lang; t: T }>({
 });
 
 export const useI18n = () => useContext(I18nContext);
+
+/** Backend notices are "code: detail"; known codes are translated. */
+export function translateNotice(lang: Lang, text: string): string {
+  const m = text.match(/^([a-z_]+)(?::\s*([\s\S]*))?$/);
+  if (!m || !(`notice.${m[1]}` in en)) return text;
+  const rest = m[2] ?? "";
+  if (m[1] === "pulled") {
+    try {
+      const r = JSON.parse(rest);
+      return translate(lang, "notice.pulled", { added: r.added.length, modified: r.modified.length, deleted: r.deleted.length });
+    } catch {
+      return text;
+    }
+  }
+  return translate(lang, `notice.${m[1]}`, { msg: rest });
+}

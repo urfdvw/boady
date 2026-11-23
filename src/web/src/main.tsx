@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { NoHardware } from "./adapters/hardware";
+import { DeviceManager } from "./hw/device";
 import { WebSocketConnection, defaultWsUrl } from "./adapters/websocket";
 import { Backend, loadToken, saveToken } from "./backend";
 import "./styles.css";
@@ -13,11 +14,13 @@ if (m) {
   history.replaceState(null, "", location.pathname + location.search);
 }
 
-const backend = new Backend(new WebSocketConnection(defaultWsUrl()), new NoHardware(), loadToken());
+const hw = "serial" in navigator ? new DeviceManager() : null;
+const backend = new Backend(new WebSocketConnection(defaultWsUrl()), hw ?? new NoHardware(), loadToken());
 backend.start();
+hw?.init().catch((e) => console.warn("hardware init failed", e));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App backend={backend} />
+    <App backend={backend} hw={hw} />
   </StrictMode>,
 );

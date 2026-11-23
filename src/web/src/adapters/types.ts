@@ -3,6 +3,7 @@
  * WebSocket + Web Serial / File System Access; the APK will provide the same
  * interfaces through a JS bridge to its native foreground service.
  */
+import type { BackendState } from "../backend";
 
 export type FrontendMode = "browser" | "apk" | "nohw";
 
@@ -20,10 +21,19 @@ export interface HardwareCaps {
   msc: boolean;
 }
 
+/** What the hardware side may use from the backend client. */
+export interface HwSink {
+  send(msg: object): void;
+  state(): BackendState | null;
+}
+
 /** Hardware side of the RPC: executes hw.request ops from the backend. */
 export interface Hardware {
   caps: HardwareCaps;
   mode: FrontendMode;
   /** Called with each hw.request; resolves with the result or throws. */
   handle(op: string, params: any, signal: AbortSignal): Promise<any>;
+  bind?(sink: HwSink): void;
+  /** The backend accepted our hello (first connect or reconnect). */
+  onConnected?(): void;
 }

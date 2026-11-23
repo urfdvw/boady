@@ -21,6 +21,7 @@ export function Onboarding({ backend, onDone }: { backend: Backend; onDone?: () 
     setError(null);
     try {
       const r = await fn();
+      if (close) backend.dismissSelect();
       if (r?.github_error) setError(translateError(lang, r.github_error));
       else if (close) onDone?.();
     } catch (e: any) {
@@ -37,15 +38,31 @@ export function Onboarding({ backend, onDone }: { backend: Backend; onDone?: () 
       <header className="onb-head">
         <div>
           <h1>{t("onb.title")}</h1>
-          <p className="muted">{backend.selectRequired ? t("onb.selectRequired") : t("onb.subtitle")}</p>
+          <p className="muted">{t("onb.subtitle")}</p>
         </div>
         {st?.project && onDone && (
-          <button className="btn" onClick={onDone}>
+          <button
+            className="btn"
+            onClick={() => {
+              backend.dismissSelect();
+              onDone();
+            }}
+          >
             {t("onb.back")}
           </button>
         )}
       </header>
 
+      {backend.selectRequired && (
+        <div className="notice">
+          {t(`onb.reason.${backend.selectRequired.reason}` as any, {
+            uid: backend.selectRequired.uid ?? "",
+            runtime: backend.selectRequired.runtime ?? "",
+            project: backend.selectRequired.project ?? "",
+            expected: backend.selectRequired.expected ?? "",
+          })}
+        </div>
+      )}
       {error && <div className="notice error">{error}</div>}
 
       <section>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useBackend, type Backend } from "./backend";
+import type { DeviceManager } from "./hw/device";
 import { SplitView } from "./components/SplitView";
 import { TabBar } from "./components/TabBar";
 import { I18nContext, translate, type Lang } from "./i18n";
@@ -33,7 +34,7 @@ function store(key: string, value: unknown) {
   }
 }
 
-export function App({ backend: b }: { backend: Backend }) {
+export function App({ backend: b, hw }: { backend: Backend; hw: DeviceManager | null }) {
   const backend = useBackend(b);
   const { landscape, keyboard } = useViewport();
   const [tabs, setTabs] = useState<TabState>(() => sanitize(load(TABS_KEY, initialTabs())));
@@ -88,13 +89,13 @@ export function App({ backend: b }: { backend: Backend }) {
         case "version":
           return <VersionTab backend={backend} />;
         case "serial":
-          return <SerialTab />;
+          return <SerialTab backend={backend} hw={hw} />;
         case "plot":
-          return <PlotTab />;
+          return <PlotTab hw={hw} />;
         case "library":
-          return <LibraryTab />;
+          return <LibraryTab backend={backend} />;
         case "device":
-          return <DeviceTab backend={backend} />;
+          return <DeviceTab backend={backend} hw={hw} />;
         case "settings":
           return <SettingsTab backend={backend} onOpenOnboarding={() => setShowOnboarding(true)} onLanguage={setLanguage} />;
       }

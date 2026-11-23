@@ -38,7 +38,11 @@ export interface DeviceInfo {
   uid: string | null;
   runtime: string | null;
   mpy_version: number | null;
+  version: string | null;
   channel: string | null;
+  identifying: boolean;
+  error: string | null;
+  last_sync: { time: number; direction: "pull" | "push"; summary: Record<string, number> } | null;
 }
 
 export interface BackendState {
@@ -127,6 +131,7 @@ export class Backend {
       this.actions.clear();
     };
     conn.onMessage = (m) => this.onMessage(m);
+    hw.bind?.({ send: (m) => this.conn.send(m), state: () => this.state });
   }
 
   start(): void {
@@ -173,7 +178,9 @@ export class Backend {
   private onMessage(m: any) {
     switch (m.type) {
       case "hello.ok":
+        this.selectRequired = null; // re-sent by the backend if still pending
         this.set({ status: "connected" });
+        this.hw.onConnected?.();
         break;
       case "hello.error":
         saveToken(null);
@@ -296,6 +303,11 @@ export class Backend {
 
   reply(requestId: string, allow: boolean) {
     this.conn.send({ type: "permission_reply", request_id: requestId, allow });
+  }
+
+  dismissSelect() {
+    this.selectRequired = null;
+    this.bump();
   }
 
   setChatVisible(v: boolean) {
