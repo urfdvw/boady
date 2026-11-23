@@ -23,8 +23,18 @@ class LibraryError(Exception):
 
 
 def _circup() -> list[str]:
-    exe = shutil.which("circup")
-    return [exe] if exe else [sys.executable, "-m", "circup"]
+    """The circup installed next to this interpreter (e.g. in the venv), else PATH.
+
+    circup has no ``__main__`` module, so ``python -m circup`` is not an option.
+    """
+    exe_dir = Path(sys.executable).parent
+    for name in ("circup", "circup.exe"):
+        if (exe_dir / name).is_file():
+            return [str(exe_dir / name)]
+    found = shutil.which("circup")
+    if not found:
+        raise LibraryError("circup is not installed: pip install -r src/backend/requirements.txt")
+    return [found]
 
 
 def _check_ready(src: Path) -> None:

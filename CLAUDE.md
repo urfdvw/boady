@@ -25,10 +25,11 @@ Prompts are files under `src/prompts/`; code only references them, never inline 
 ## Build and test
 
 ```bash
-pip install -r src/backend/requirements-dev.txt
-cd src/backend && python -m pytest -q
+python3 -m venv .venv                                # git-ignored
+.venv/bin/pip install -r src/backend/requirements-dev.txt
+cd src/backend && ../../.venv/bin/python -m pytest -q
 cd src/web && npm ci && npm test && npm run build    # build writes ../../dist/web
-python run.py -v                                     # http://127.0.0.1:8765/#token=...
+.venv/bin/python run.py -v                           # http://127.0.0.1:8765/#token=...
 ```
 
 During frontend work `npm run dev` in `src/web` proxies `/ws` to a backend on port 8765.
