@@ -14,25 +14,15 @@ Requirements: Python 3.10+, git, and a working [Claude Code](https://docs.claude
 git clone https://github.com/urfdvw/boady.git
 ```
 
-Install the backend's dependencies into a virtual environment inside the checkout:
-
 ```bash
-cd boady && python3 -m venv .venv
+cd boady && pip install -r src/backend/requirements.txt
 ```
 
 ```bash
-.venv/bin/pip install -r src/backend/requirements.txt
+python run.py
 ```
 
-Start it (every time) with the venv's Python:
-
-```bash
-.venv/bin/python run.py
-```
-
-On Windows use `.venv\Scripts\pip` and `.venv\Scripts\python` instead.
-
-`run.py` prints a pairing code and a link like `http://127.0.0.1:8765/#token=…`. Open the link in Chrome; the page remembers the code. To see the code again: `.venv/bin/python run.py --show-token`. The backend only listens on 127.0.0.1.
+`run.py` prints a pairing code and a link like `http://127.0.0.1:8765/#token=…`. Open the link in Chrome; the page remembers the code. To see the code again: `python run.py --show-token`. The backend only listens on 127.0.0.1.
 
 ## Using boady
 

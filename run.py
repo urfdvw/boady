@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Start the boady backend; it also serves the frontend from dist/web.
 
-    .venv/bin/python run.py [--port 8765] [--show-token] [--reset-token] [-v]
+    python run.py [--port 8765] [--show-token] [--reset-token] [-v]
 """
 
 import sys
@@ -14,12 +14,7 @@ try:
     import aiohttp  # noqa: F401
     import claude_agent_sdk  # noqa: F401
 except ImportError as e:
-    sys.exit(
-        f"Missing dependency ({e.name}). Install into a virtual environment and start with its Python:\n"
-        f"  python3 -m venv {ROOT / '.venv'}\n"
-        f"  {ROOT / '.venv/bin/pip'} install -r {ROOT / 'src/backend/requirements.txt'}\n"
-        f"  {ROOT / '.venv/bin/python'} {ROOT / 'run.py'}"
-    )
+    sys.exit(f"Missing dependency ({e.name}). Install with:\n  pip install -r {ROOT / 'src/backend/requirements.txt'}")
 
 from boady.__main__ import main  # noqa: E402
 
