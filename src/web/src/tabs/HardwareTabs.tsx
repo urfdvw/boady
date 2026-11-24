@@ -217,30 +217,28 @@ export function LibraryTab({ backend }: { backend: Backend }) {
   const refresh = () => run(async () => setLibs((await backend.action("lib.list")).libraries));
 
   useEffect(() => {
-    if (type === "circuitpython") refresh();
+    if (type) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, backend.state?.project?.id]);
+  }, [type, backend.state?.project?.id, backend.state?.tree.length]);
 
-  if (type !== "circuitpython")
-    return (
-      <div className="tab-page placeholder">
-        <h3>{t("tab.library")}</h3>
-        <p>{t("library.mpLater")}</p>
-      </div>
-    );
+  const mp = type === "micropython";
 
   return (
     <div className="tab-page library">
-      <p className="muted small">{t("library.mirrorNote")}</p>
+      <p className="muted small">
+        {t("library.mirrorNote")} {mp && t("library.mipNote")}
+      </p>
       <section>
         <div className="section-head">
           <h3>{t("library.installed")}</h3>
           <button className="btn icon" title={t("common.refresh")} disabled={busy} onClick={refresh}>
             <RefreshCw size={14} />
           </button>
-          <button className="btn" disabled={busy || !libs?.some((l) => l.outdated)} onClick={() => run(() => backend.action("lib.update"), t("library.done")).then(refresh)}>
-            {t("library.updateAll")}
-          </button>
+          {!mp && (
+            <button className="btn" disabled={busy || !libs?.some((l) => l.outdated)} onClick={() => run(() => backend.action("lib.update"), t("library.done")).then(refresh)}>
+              {t("library.updateAll")}
+            </button>
+          )}
           {busy && <span className="spinner" />}
         </div>
         {libs && libs.length === 0 && <div className="empty">{t("library.none")}</div>}
@@ -271,10 +269,15 @@ export function LibraryTab({ backend }: { backend: Backend }) {
             run(async () => setResults((await backend.action("lib.search", { query })).results));
           }}
         >
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="bme280" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={mp ? "aioble" : "bme280"} />
           <button className="btn primary" disabled={busy} type="submit">
             {t("library.search")}
           </button>
+          {mp && (
+            <button className="btn" type="button" disabled={busy || !query.trim()} onClick={() => run(() => backend.action("lib.install", { names: [query.trim()] }), t("library.done")).then(refresh)}>
+              {t("library.install")}
+            </button>
+          )}
         </form>
         <ul className="lib-list">
           {results.map((name) => (

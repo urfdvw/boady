@@ -20,6 +20,7 @@ The `boady` MCP tools reach the board through the user's frontend:
 - `sync_to_device` — make the board equal to `src/` (changed files written, extra files deleted). Needs approval.
 - `write_repl` / `write_data` — write text to the REPL / data serial port. Use the escapes `\x01`–`\x04` for Ctrl-A–Ctrl-D (`\x03` interrupts the running program, `\x04` soft-reboots or ends raw/paste mode). Returns `{"cursor": N}`, the stream position at write time.
 - `read_repl` / `read_data` — read serial history: `since` (cursor), `tail` (last N lines), `wait_for` (text) with `timeout_ms`. Returns `{"text", "cursor", "start", "truncated", "matched"}`. Reading never clears history.
+- `install_library` (`names`) / `list_libraries` — install into / list the mirror's `src/lib` (circup for CircuitPython, mip for MicroPython). Libraries reach the board with the next `sync_to_device`.
 
 Always pass the cursor returned by a write as `since` when reading its output, so you do not mistake an older Traceback for a new one. Use `wait_for` (e.g. `">>> "`) instead of polling.
 

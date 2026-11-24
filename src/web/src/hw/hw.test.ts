@@ -112,6 +112,19 @@ describe("raw REPL", () => {
   });
 });
 
+describe("list skip", () => {
+  it("does not descend into skipped mounts", async () => {
+    let code = "";
+    const { r } = await session((c) => {
+      code = c;
+      return ["F 3 /main.py\r\n", ""];
+    });
+    expect(await listFiles(r, ["/rom"])).toEqual([{ path: "main.py", size: 3 }]);
+    expect(code).toContain("_bs=('/rom',)");
+    expect(code).toContain("if q in _bs:");
+  });
+});
+
 describe("sync rules", () => {
   it("excludes OS junk and the ID file", () => {
     expect(excluded(".DS_Store")).toBe(true);

@@ -73,6 +73,7 @@ class App:
         )
         self.auth_status: dict[str, Any] = {"claude": None, "github": None}
         self.tool_ctx.on_synced = self.on_synced
+        self.tool_ctx.project_info = lambda: (self.project.type, self.project.mpy_version) if self.project else None
         self._tasks: set[asyncio.Task] = set()
         self._identify_task: asyncio.Task | None = None
 
@@ -598,7 +599,7 @@ class App:
             if name == "lib.search":
                 return {"results": await libraries.search(ptype, root / "src", str(p.get("query", "")))}
             if name == "lib.install":
-                out = await libraries.install(ptype, root / "src", list(p.get("names") or []))
+                out = await libraries.install(ptype, root / "src", list(p.get("names") or []), self.project.mpy_version if self.project else None)
             elif name == "lib.update":
                 out = await libraries.update(ptype, root / "src")
             elif name == "lib.uninstall":

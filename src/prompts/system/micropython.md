@@ -5,4 +5,5 @@
 - **Try code in RAM first**: stop the program, then use raw REPL (`\x01`, code, `\x04` to run it; output ends with `\x04>`; `\x02` returns to the normal REPL) to test functions without writing files.
 - Errors appear as `Traceback (most recent call last):`.
 - There is usually no data serial port; `read_data` / `write_data` return an error.
-- Libraries: installed into `src/lib/` by the boady library tool (`mip`), never with `mpremote` from Bash.
+- Libraries: `install_library` with micropython-lib names (e.g. `aioble`), `github:org/repo[/path]` or URLs, optionally `name@version`. They are written to `src/lib/` (compiled `.mpy` matching the board once it has been connected, `.py` before). Never use `mpremote` from Bash; it cannot reach the board.
+- After a sync with new files, soft-reset (`\x03`, wait for `>>> `, `\x04`) so `main.py` runs with them; `restarted` is always `false` for MicroPython.

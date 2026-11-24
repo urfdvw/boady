@@ -160,7 +160,6 @@
   "library.install": "安装",
   "library.outdated": "可更新到 {latest}",
   "library.mirrorNote": "库安装到镜像（src/lib），下次同步时写入板子。",
-  "library.mpLater": "MicroPython 的库管理（mip）将在第三阶段提供。",
   "library.done": "完成。",
   "device.connect": "连接板子",
   "device.addData": "添加数据串口",
@@ -192,5 +191,8 @@
   "err.no_boot_out": "请先连接一次板子，让 boot_out.txt 拉取到 src/。",
   "err.read_only": "当前只读。",
   "err.not_available": "该项目类型暂不支持。",
-  "err.identify_failed": "无法识别板子。"
+  "err.identify_failed": "无法识别板子。",
+  "library.mipNote": "MicroPython 的包来自 micropython.org（mip）；也可以直接安装 github:org/repo 或网址。",
+  "err.index_unavailable": "无法加载包索引。",
+  "err.not_installed": "未安装。"
 }

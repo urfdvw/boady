@@ -160,7 +160,6 @@
   "library.install": "Install",
   "library.outdated": "update available: {latest}",
   "library.mirrorNote": "Libraries are installed into the mirror (src/lib) and reach the board with the next sync.",
-  "library.mpLater": "MicroPython libraries (mip) arrive in phase 3.",
   "library.done": "Done.",
   "device.connect": "Connect board",
   "device.addData": "Add data port",
@@ -192,5 +191,8 @@
   "err.no_boot_out": "Connect the board once so boot_out.txt is pulled into src/.",
   "err.read_only": "Read only right now.",
   "err.not_available": "Not available for this project type yet.",
-  "err.identify_failed": "Could not identify the board."
+  "err.identify_failed": "Could not identify the board.",
+  "library.mipNote": "MicroPython packages come from micropython.org (mip); you can also install github:org/repo or a URL directly.",
+  "err.index_unavailable": "Could not load the package index.",
+  "err.not_installed": "Not installed."
 }

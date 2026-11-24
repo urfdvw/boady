@@ -8,8 +8,10 @@ Technical and design decisions made during implementation (spec「交接说明�
 | --- | --- |
 | Pre-check (needs Master) | **Done 2026-11-23.** Web Serial fails in Chrome on the Pixel 10 Pro; resolved by Master's decision D18 (Android Chrome is an untested bonus; on Android only the app is tested). Still open: `claude setup-token` untested (item 5). |
 | Phase 1: backend & chat | Implemented, automated tests pass, acceptance run done in desktop Chromium (create project → chat → approval → diff → commit → backend restart → session resumed). |
-| Phase 2: CircuitPython | Implemented; automated tests pass (backend with a fake Claude client and fake frontend, frontend with a fake CircuitPython board). **Acceptance on real hardware not done** — needs Master (checklist below). circup could not be exercised against the real bundle here (GitHub release downloads are blocked in the build sandbox). |
-| Phase 3–5 | Not started. |
+| Phase 2: CircuitPython | Runs on real hardware (Master, 2026-11-24, Seeed XIAO nRF52840 Sense, CircuitPython 10.2.0). Master has UI-detail complaints, to be handled in a usability pass before the APK. |
+| Phase 3: MicroPython | Implemented; automated tests pass; a real `mip` install from micropython.org into a mirror works. **Acceptance on a MicroPython board not done** — needs Master (checklist below). |
+| Usability pass | Next, before the APK (Master, 2026-11-24). |
+| Phase 4–5 | Not started. |
 
 Phase 1 does not depend on any pre-check result (desktop, no hardware), so it was built first.
 
@@ -83,6 +85,16 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 
 **D28 — User console.** The console writes straight to the port from the frontend and is refused (read-only notice) while the agent holds the port lock (D8) or a file sync uses the REPL port. Enter sends the line plus `\r`; Ctrl-C / Ctrl-D buttons send `\x03` / `\x04`.
 
+**D29 — mip into the mirror.** `src/backend/boady/mip_mirror.py` calls `mpremote.mip._install_package(transport, package, "https://micropython.org/pi/v2", "lib", version, mpy)` exactly as the spec describes, with `MirrorTransport` (the six methods; paths confined to `src/`). `mpy` is true when the project table has a `.mpy` version (from identification, `sys.implementation._mpy`); `eval` returns `_mpy & 0xFF` like mpremote. mip prints progress; it is captured and returned. Runs in a worker thread. Accepted names: index names, `github:` / `gitlab:` / `codeberg:` paths and `https://` URLs, optionally `@version`; local file paths are refused (the agent must not copy arbitrary local files into the mirror). Verified with a real install of `aioble` (mpy 6 → `.mpy` files).
+
+**D30 — Library tools for the agent.** Instead of opening Bash to `mpremote`, two boady MCP tools: `install_library {names}` and `list_libraries {}` (auto-allowed, mirror only). They work for both project types (circup for CircuitPython, mip for MicroPython); for CircuitPython the whitelisted `circup --path src …` Bash command stays available. This resolves the pending "Bash whitelist or wrap everything" item for libraries.
+
+**D31 — MicroPython library list.** mip keeps no manifest, so the Library tab lists the top-level entries of `src/lib` (file stem or package directory). Uninstall removes that entry. There is no "update all"; installing again overwrites. Search uses the micropython.org `index.json` (name and description). A typed `github:…` / URL can be installed directly.
+
+**D32 — `/rom` is skipped on MicroPython.** Newer MicroPython ports mount a read-only ROMFS at `/rom` (mpremote ignores `/rom` too). It is not part of the board's writable files, so MicroPython projects do not pull it and never try to delete from it. This is outside the spec's two exclusion classes; Master may veto.
+
+**D33 — DTR/RTS confirmed against mpremote.** mpremote 1.29.0 keeps pyserial's default (DTR and RTS asserted on open) on macOS/Linux, same as boady's D23 setting; only Windows + CP210x gets a special order, which Web Serial cannot reproduce.
+
 ## Pre-check checklist (needs Master)
 
 Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)
@@ -145,3 +157,15 @@ Use a board with native USB (e.g. QT Py RP2040, Feather ESP32-S3) running a rece
 11. **Reconnect.** Unplug and replug the board (Chrome reconnects automatically to a granted port): the same project opens and the conversation continues. With two projects bound to the same board, the project page asks which one.
 12. **Runtime mismatch.** Create a MicroPython project and connect the CircuitPython board: everything stops and the project page explains the mismatch.
 13. **Old firmware (optional).** On CircuitPython 8.x without `unsafe_disable_usb_drive`, a serial sync fails with the "upgrade or boot.py" message.
+
+## Phase 3 manual test checklist (desktop Chrome + MicroPython board)
+
+Use a native-USB board (e.g. Raspberry Pi Pico / Pico W) and, if available, an ESP32 dev board with a CP210x / CH34x USB-serial chip.
+
+1. Create a MicroPython project; Device tab → Connect board. UID (`machine.unique_id()`), runtime `micropython`, firmware version appear; the board files are pulled into `src/` (no `/rom`, no `.boady_id`).
+2. ESP32 with a USB-serial chip: connecting must **not** reset the board (watch for a boot banner in the Serial tab right after connecting).
+3. Ask Claude to change `main.py` to blink the LED and print a counter, sync it and test it. Claude soft-resets (`\x03`, `\x04`) and reads the output. Then the closed loop: an intentional bug, Traceback, fix.
+4. Ask Claude to try a function in RAM first (raw REPL) before writing it into the code.
+5. Library tab: search `aioble`, install, see `src/lib/aioble/*.mpy`; remove it; install `github:org/repo` of a small package. Ask Claude to install a package (it uses `install_library`).
+6. A port without `machine.unique_id()` (rare): `/.boady_id` is created on the board and stays out of the mirror.
+7. Connecting the MicroPython board while a CircuitPython project is open: everything stops and the project page explains the mismatch.

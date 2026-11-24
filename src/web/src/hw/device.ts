@@ -231,6 +231,11 @@ export class DeviceManager implements Hardware {
     return run;
   }
 
+  /** MicroPython mounts a read-only ROMFS at /rom on some ports; it is not part of the board's files. */
+  private skip(): string[] {
+    return this.sink?.state()?.project?.type === "micropython" ? ["/rom"] : [];
+  }
+
   private port(name: PortName): PortConn {
     const c = this.conns[name];
     if (!c) throw new Error(name === "data" ? "No data serial port is open." : "Device not connected.");
@@ -338,7 +343,7 @@ export class DeviceManager implements Hardware {
       return { files, channel: "msc" };
     }
     await this.withRaw(signal, async (r) => {
-      for (const e of await listFiles(r)) if (!excluded(e.path)) files[e.path] = toBase64(await readFile(r, e.path));
+      for (const e of await listFiles(r, this.skip())) if (!excluded(e.path)) files[e.path] = toBase64(await readFile(r, e.path));
     });
     return { files, channel: "serial" };
   }
@@ -352,7 +357,7 @@ export class DeviceManager implements Hardware {
       }
     } else {
       await this.withRaw(signal, async (r) => {
-        const paths = (await listFiles(r)).map((e) => e.path).filter((p) => !excluded(p));
+        const paths = (await listFiles(r, this.skip())).map((e) => e.path).filter((p) => !excluded(p));
         Object.assign(board, await hashFiles(r, paths));
       });
     }

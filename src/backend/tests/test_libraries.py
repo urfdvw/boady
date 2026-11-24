@@ -63,5 +63,47 @@ async def test_circup_calls(tmp_path, fake_circup):
     assert calls[-3:] == [f"--path {src} install adafruit_bme280", f"--path {src} update --all", f"--path {src} uninstall adafruit_bme280"]
     with pytest.raises(libraries.LibraryError, match="invalid_name"):
         await libraries.install("circuitpython", src, ["--evil"])
+
+
+async def test_mip_into_mirror(tmp_path):
+    """mpremote's own mip code with the mirror transport, offline via a local package.json."""
+    import json
+
+    from boady import mip_mirror
+
+    pkg = tmp_path / "pkgsrc"
+    (pkg / "mypkg").mkdir(parents=True)
+    (pkg / "mypkg" / "__init__.py").write_text("X = 1\n")
+    (pkg / "single.py").write_text("Y = 2\n")
+    (pkg / "package.json").write_text(json.dumps({"urls": [["mypkg/__init__.py", "mypkg/__init__.py"], ["single.py", "single.py"]], "version": "0.1"}))
+    src = tmp_path / "proj" / "src"
+    src.mkdir(parents=True)
+    with pytest.raises(libraries.LibraryError, match="invalid_name"):  # local files are refused
+        await libraries.install("micropython", src, [str(pkg / "package.json")], None)
+    res = await mip_mirror.install(src, str(pkg / "package.json"), None, None)
+    assert "Installing" in res["log"] and sorted(res["written"]) == ["lib/mypkg/__init__.py", "lib/single.py"]
+    assert (src / "lib" / "mypkg" / "__init__.py").read_text() == "X = 1\n"
+    assert (src / "lib" / "single.py").read_text() == "Y = 2\n"
+    names = [e["name"] for e in await libraries.list_installed("micropython", src)]
+    assert names == ["mypkg", "single"]
+    await libraries.uninstall("micropython", src, ["mypkg"])
+    assert not (src / "lib" / "mypkg").exists()
     with pytest.raises(libraries.LibraryError, match="not_available"):
-        await libraries.install("micropython", src, ["x"])
+        await libraries.update("micropython", src)
+
+
+def test_mirror_transport(tmp_path):
+    from boady.mip_mirror import MirrorTransport
+    from mpremote.commands import CommandError
+
+    t = MirrorTransport(tmp_path, 0x0A06)
+    assert t.eval("getattr(sys.implementation, '_mpy', 0) & 0xFF") == 6
+    assert MirrorTransport(tmp_path, None).eval("x") == 0
+    t.fs_writefile("lib/a.py", b"abc")
+    import hashlib
+
+    assert t.fs_hashfile("lib/a.py", "sha256") == hashlib.sha256(b"abc").digest()
+    with pytest.raises(FileNotFoundError):
+        t.fs_hashfile("lib/none.py", "sha256")
+    with pytest.raises(CommandError):
+        t.fs_writefile("../escape.py", b"x")

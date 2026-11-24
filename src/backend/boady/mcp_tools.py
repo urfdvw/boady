@@ -14,7 +14,7 @@ from typing import Any, Awaitable, Callable
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import gitops, sync
+from . import gitops, libraries, sync
 from .hardware import HardwareBridge, HardwareError
 
 USER_DECLINED = "User declined."
@@ -35,6 +35,8 @@ class ToolContext:
     confirm: Callable[[str, dict[str, Any]], Awaitable[bool]]
     on_mirror_changed: Callable[[], Awaitable[None]]
     on_synced: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+    # (project type, .mpy version) of the open project, or None
+    project_info: Callable[[], tuple[str, int | None] | None] = lambda: None
 
 
 def _ok(data: Any) -> dict[str, Any]:
@@ -159,7 +161,34 @@ def build_server(ctx: ToolContext, only: set[str] | None = None):
         except HardwareError as e:
             return _err(str(e))
 
-    tools = [read_repl, write_repl, read_data, write_data, sync_from_device, sync_to_device]
+    @tool(
+        "install_library",
+        "Install libraries into the mirror src/lib (CircuitPython: circup bundle names; MicroPython: "
+        "mip package names, github:org/repo[/path], or URLs, optionally name@version). Reaches the board with the next sync.",
+        {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}}, "required": ["names"]},
+    )
+    async def install_library(args):
+        info, root = ctx.project_info(), ctx.project_dir()
+        if info is None or root is None:
+            return _err("No project is open.")
+        try:
+            out = await libraries.install(info[0], root / "src", list(args.get("names") or []), info[1])
+        except libraries.LibraryError as e:
+            return _err(str(e))
+        await ctx.on_mirror_changed()
+        return _ok({"output": out[-4000:]})
+
+    @tool("list_libraries", "List libraries installed in the mirror src/lib.", {"type": "object", "properties": {}})
+    async def list_libraries(args):
+        info, root = ctx.project_info(), ctx.project_dir()
+        if info is None or root is None:
+            return _err("No project is open.")
+        try:
+            return _ok(await libraries.list_installed(info[0], root / "src"))
+        except libraries.LibraryError as e:
+            return _err(str(e))
+
+    tools = [read_repl, write_repl, read_data, write_data, sync_from_device, sync_to_device, install_library, list_libraries]
     if only is not None:
         tools = [t for t in tools if t.name in only]
     return create_sdk_mcp_server("boady", "1.0.0", tools), [t.name for t in tools]

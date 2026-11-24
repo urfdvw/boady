@@ -31,6 +31,7 @@ ROOT = Path("/tmp/proj")
         ("mcp__boady__write_repl", {"data": "\x03"}, "allow"),
         ("mcp__boady__sync_from_device", {}, "allow"),
         ("mcp__boady__sync_to_device", {}, "ask"),
+        ("mcp__boady__install_library", {"names": ["aioble"]}, "allow"),
         ("TodoWrite", {}, "allow"),
         ("WebFetch", {"url": "https://x"}, "ask"),
     ],

@@ -10,20 +10,24 @@ export interface BoardEntry {
   size: number;
 }
 
-const LIST = `import os
+/** ``skip``: absolute board paths not to descend into (e.g. MicroPython's read-only /rom). */
+const listCode = (skip: string[]) => `import os
+_bs=(${skip.map((s) => `'${s}'`).join(",")}${skip.length === 1 ? "," : ""})
 def _bw(p):
  for n in os.listdir(p or '/'):
   q=p+'/'+n
+  if q in _bs:
+   continue
   s=os.stat(q)
   if s[0]&0x4000:
    _bw(q)
   else:
    print('F',s[6],q)
 _bw('')
-del _bw`;
+del _bw,_bs`;
 
-export async function listFiles(r: RawRepl): Promise<BoardEntry[]> {
-  const out = await r.exec(LIST, 30000);
+export async function listFiles(r: RawRepl, skip: string[] = []): Promise<BoardEntry[]> {
+  const out = await r.exec(listCode(skip), 30000);
   const files: BoardEntry[] = [];
   for (const line of out.split(/\r?\n/)) {
     const m = line.match(/^F (\d+) \/(.+)$/);
