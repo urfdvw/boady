@@ -31,17 +31,44 @@ def validate_name(name: str) -> str:
     return name
 
 
-def read_type(root: Path) -> str | None:
-    try:
-        data = json.loads((root / "boady.json").read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+# Files boady reads or writes on its own (no tool call, so no approval): only the
+# project's own regular files, never through a symbolic link (review 9).
+METADATA_FILES = ("boady.json", "CLAUDE.md")
+
+
+def own_file(root: Path, name: str) -> Path | None:
+    """``root/name`` if it is a regular file of the project itself, else None."""
+    f = root / name
+    if f.is_symlink() or not f.is_file() or f.resolve().parent != root.resolve():
         return None
+    return f
+
+
+def _writable(root: Path, name: str) -> Path:
+    f = root / name
+    if f.is_symlink() or (f.exists() and own_file(root, name) is None):
+        raise ProjectError(f"unsafe_project_file: {name} is a symbolic link or not a regular file")
+    return f
+
+
+def _read_json(root: Path) -> Any:
+    f = own_file(root, "boady.json")
+    if f is None:
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def read_type(root: Path) -> str | None:
+    data = _read_json(root)
     t = data.get("type") if isinstance(data, dict) else None
     return t if t in PROJECT_TYPES else None
 
 
 def write_type(root: Path, project_type: str) -> None:
-    (root / "boady.json").write_text(json.dumps({"type": project_type}, indent=2) + "\n", encoding="utf-8")
+    _writable(root, "boady.json").write_text(json.dumps({"type": project_type}, indent=2) + "\n", encoding="utf-8")
 
 
 # Board kind, fixed by the first connection (D40):
@@ -51,10 +78,7 @@ BOARD_KINDS = ("usb", "rp2040js")
 
 
 def read_board(root: Path) -> str | None:
-    try:
-        data = json.loads((root / "boady.json").read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
+    data = _read_json(root)
     b = data.get("board") if isinstance(data, dict) else None
     return b if b in BOARD_KINDS else None
 
@@ -63,7 +87,7 @@ def write_board(root: Path, kind: str) -> None:
     """Add ``board`` to boady.json, keeping its other keys (left uncommitted: git is manual)."""
     if kind not in BOARD_KINDS:
         raise ValueError(f"unknown board kind: {kind}")
-    f = root / "boady.json"
+    f = _writable(root, "boady.json")
     data = json.loads(f.read_text(encoding="utf-8"))
     data["board"] = kind
     f.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -149,6 +173,10 @@ async def clone(projects_dir: Path, url: str, taken: set[str], classify: Classif
     except MirrorPathError as e:
         shutil.rmtree(root, ignore_errors=True)
         raise ProjectError(f"repo_unfit: {e}") from e
+    links = [n for n in METADATA_FILES if (root / n).is_symlink()]
+    if links:
+        shutil.rmtree(root, ignore_errors=True)
+        raise ProjectError(f"repo_unfit: {links[0]} is a symbolic link; boady reads and writes it without asking, so it must be a regular file")
     project_type = read_type(root)
     if project_type is None:
         try:

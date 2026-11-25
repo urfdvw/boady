@@ -130,3 +130,12 @@ async def test_stream_crash_ends_the_turn(project):
     assert s.client is None and s.running is False and ended == [True]
     assert any(e.get("item", {}).get("text") == "Claude Code stopped: cli died" for e in events)
     assert events[-1] == {"kind": "turn_end", "result": {"is_error": True, "subtype": "crash"}}
+
+
+async def test_claude_md_through_a_link_is_not_loaded(project, tmp_path):
+    """Review 9, finding 1: reading it through Read would need approval; boady must not load it silently."""
+    secret = tmp_path / "outside.txt"
+    secret.write_text("SECRET outside the project")
+    (project.path / "CLAUDE.md").unlink()
+    (project.path / "CLAUDE.md").symlink_to(secret)
+    assert "SECRET" not in session(project).build_options().system_prompt["append"]

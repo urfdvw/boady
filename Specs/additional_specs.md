@@ -140,6 +140,8 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 - Zoom: two-finger pinch and drag on touch screens; +/−/reset buttons and Ctrl+wheel on computers.
 - The agent's system prompt for a test project says the user can see the LEDs and press the buttons, so it may ask the user to press a button or read an LED, while printed output stays the main test.
 
+**D43 — Files boady handles without a tool call are never followed through links (review 9).** `boady.json` and `CLAUDE.md` are read (type, board kind, the system prompt) and `boady.json` is written (type after a clone, board kind at the first connection) by boady itself, without the approval a `Read` / `Write` outside the project would need. They are used only as regular files of the project: through a symbolic link they count as missing and writing refuses (`unsafe_project_file`); a clone whose `boady.json` or `CLAUDE.md` is a link is unfit.
+
 ## Pre-check checklist (needs Master)
 
 Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)

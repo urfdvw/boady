@@ -213,3 +213,44 @@ async def test_reset_untracked_link_pointing_outside(tmp_path):
     await gitops.reset_file(root, "src/out.txt")
     assert not (root / "src" / "out.txt").is_symlink()
     assert outside.read_text() == "keep"
+
+
+async def test_boady_json_through_a_link_is_neither_read_nor_written(tmp_path):
+    """Review 9, finding 1: the first connection must not rewrite a file outside the project."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text(json.dumps({"type": "circuitpython"}))
+    (root / "boady.json").symlink_to(outside)
+    assert projects.read_type(root) is None and projects.read_board(root) is None
+    with pytest.raises(projects.ProjectError, match="unsafe_project_file"):
+        projects.write_board(root, "rp2040js")
+    with pytest.raises(projects.ProjectError, match="unsafe_project_file"):
+        projects.write_type(root, "micropython")
+    assert json.loads(outside.read_text()) == {"type": "circuitpython"}
+    (root / "boady.json").unlink()
+    (root / "boady.json").symlink_to(tmp_path / "dangling.json")  # a write would create it
+    with pytest.raises(projects.ProjectError):
+        projects.write_type(root, "micropython")
+    assert not (tmp_path / "dangling.json").exists()
+
+
+async def test_clone_refuses_linked_metadata(tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("SECRET")
+    src = tmp_path / "linked"
+    (src / "src").mkdir(parents=True)
+    (src / "src" / "code.py").write_text("x")
+    (src / "boady.json").write_text(json.dumps({"type": "circuitpython"}))
+    (src / "CLAUDE.md").symlink_to(outside)
+    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "commit", "-qm", "init"]):
+        subprocess.run(cmd, cwd=src, check=True)
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+
+    async def never(_root):
+        raise AssertionError("classifier must not run")
+
+    with pytest.raises(projects.ProjectError, match="CLAUDE.md is a symbolic link"):
+        await projects.clone(pdir, str(src), set(), never)
+    assert not (pdir / "linked").exists()

@@ -162,10 +162,10 @@ class AgentSession:
     # -- options -----------------------------------------------------------
     def build_options(self) -> ClaudeAgentOptions:
         root = self.root
-        claude_md = root / "CLAUDE.md"
+        claude_md = projects.own_file(root, "CLAUDE.md")  # never through a link (review 9)
         # board kind straight from boady.json: the first connection may have fixed it after this session was created
         append = prompts.system_prompt(self.project.type, projects.read_board(root))
-        if claude_md.is_file():
+        if claude_md is not None:
             append += "\n\n# Project CLAUDE.md (loaded by boady)\n\n" + claude_md.read_text(encoding="utf-8", errors="replace")
         opts = ClaudeAgentOptions(
             cwd=str(root),
