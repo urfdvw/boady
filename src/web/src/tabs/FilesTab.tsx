@@ -1,9 +1,9 @@
 import { ArrowLeft, ChevronDown, ChevronRight, File, Folder, Save } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Backend, GitChange } from "../backend";
 import { CodeEditor } from "../components/CodeEditor";
 import { useI18n } from "../i18n";
-import { getOpen, setOpen, type OpenFile } from "../state/drafts";
+import { getOpen, readApplies, setOpen, type OpenFile, type ReadTicket } from "../state/drafts";
 
 const MARK: Record<GitChange["status"], string> = { added: "A", modified: "M", deleted: "D", renamed: "R" };
 
@@ -19,6 +19,19 @@ export function FilesTab({ backend, landscape }: { backend: Backend; landscape: 
   const [saved, setSaved] = useState(restored?.saved ?? "");
   const [error, setError] = useState<string | null>(null);
   const dirty = file?.text !== undefined && text !== saved;
+  // latest editor state for async read answers (closures would see stale values)
+  const live = useRef({ seq: 0, path, text, saved });
+  live.current = { ...live.current, path, text, saved };
+
+  const read = async (p: string, opening: boolean) => {
+    const ticket: ReadTicket = { seq: ++live.current.seq, path: p, text: live.current.text, opening };
+    const f = await backend.action("file.read", { path: p });
+    if (!readApplies(ticket, live.current)) return;
+    setPath(p);
+    setFile(f);
+    setText(f.text ?? "");
+    setSaved(f.text ?? "");
+  };
 
   // keep the open file and the draft outside the component (survives tab switches)
   useEffect(() => {
@@ -42,11 +55,7 @@ export function FilesTab({ backend, landscape }: { backend: Backend; landscape: 
     if (dirty && !window.confirm(t("files.discard"))) return;
     setError(null);
     try {
-      const f = await backend.action("file.read", { path: p });
-      setPath(p);
-      setFile(f);
-      setText(f.text ?? "");
-      setSaved(f.text ?? "");
+      await read(p, true);
     } catch (e: any) {
       setError(e.message);
     }
@@ -61,14 +70,7 @@ export function FilesTab({ backend, landscape }: { backend: Backend; landscape: 
       setFile(null);
       return;
     }
-    backend
-      .action("file.read", { path })
-      .then((f) => {
-        setFile(f);
-        setText(f.text ?? "");
-        setSaved(f.text ?? "");
-      })
-      .catch(() => {});
+    read(path, false).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [st?.tree, st?.git.status]);
 
@@ -134,7 +136,10 @@ export function FilesTab({ backend, landscape }: { backend: Backend; landscape: 
               <Save size={14} /> {t("common.save")}
             </button>
           </div>
-          {file?.binary ? <div className="empty">{t("files.binary", { size: file.size ?? 0 })}</div> : <CodeEditor path={path} value={text} onChange={setText} />}
+          {file?.binary ? <div className="empty">{t("files.binary", { size: file.size ?? 0 })}</div> : <CodeEditor path={path} value={text} onChange={(v) => {
+                live.current.text = v;
+                setText(v);
+              }} />}
         </>
       ) : (
         <div className="empty">{t("files.select")}</div>

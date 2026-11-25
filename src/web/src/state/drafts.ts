@@ -27,3 +27,25 @@ if (typeof window !== "undefined") {
     if (hasUnsaved()) e.preventDefault();
   });
 }
+
+/** What the editor looked like when a file read was sent. */
+export interface ReadTicket {
+  seq: number; // increases with every read; only the newest may apply
+  path: string;
+  text: string; // editor text at request time
+  opening: boolean; // user clicked a file (vs. background reload of the open one)
+}
+
+/**
+ * Whether a read answer may replace the editor content. A late answer must
+ * never overwrite typing: it applies only if no newer read started, the
+ * editor text did not change since the request, and (for a background
+ * reload) the same file is still open and has no unsaved edits.
+ */
+export function readApplies(
+  ticket: ReadTicket,
+  now: { seq: number; path: string | null; text: string; saved: string },
+): boolean {
+  if (ticket.seq !== now.seq || ticket.text !== now.text) return false;
+  return ticket.opening || (now.path === ticket.path && now.text === now.saved);
+}
