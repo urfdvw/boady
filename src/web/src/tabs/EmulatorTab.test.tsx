@@ -105,4 +105,44 @@ describe("Emulator tab in a DOM", () => {
     act(() => lowButtons[1].click()); // "LED lights on" low
     expect(leds()[0].getAttribute("class")).not.toContain("lit");
   });
+
+  it("drag pans, two fingers pinch, Ctrl+wheel and the buttons zoom (review 11, finding 3)", () => {
+    const viewport = host.querySelector(".emu-viewport") as HTMLElement;
+    const canvas = () => (host.querySelector(".emu-canvas") as HTMLElement).style.transform;
+    const ptr = (type: string, id: number, x: number, y: number) =>
+      act(() => void viewport.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: id, clientX: x, clientY: y })));
+    expect(canvas()).toBe("translate(0px, 0px) scale(1)");
+    // one pointer on the background drags the board
+    ptr("pointerdown", 1, 10, 10);
+    ptr("pointermove", 1, 40, 30);
+    ptr("pointerup", 1, 40, 30);
+    expect(canvas()).toBe("translate(30px, 20px) scale(1)");
+    // two fingers 100 px apart spread to 200 px around the same midpoint: twice as big
+    ptr("pointerdown", 1, 50, 100);
+    ptr("pointerdown", 2, 150, 100);
+    ptr("pointermove", 1, 0, 100);
+    ptr("pointermove", 2, 200, 100);
+    ptr("pointerup", 1, 0, 100);
+    ptr("pointerup", 2, 200, 100);
+    expect(canvas()).toBe("translate(-40px, -60px) scale(2)"); // (100,100) stays under the fingers
+    // a press on a button does not move the board
+    act(() => void button().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 3, clientX: 0, clientY: 0 })));
+    ptr("pointermove", 3, 90, 90);
+    act(() => void button().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 3 })));
+    expect(canvas()).toBe("translate(-40px, -60px) scale(2)");
+    // Ctrl+wheel zooms around the pointer; a plain wheel does not
+    act(() => void viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, clientX: 0, clientY: 0, bubbles: true, cancelable: true })));
+    expect(canvas()).toBe("translate(-40px, -60px) scale(2)");
+    const wheel = new WheelEvent("wheel", { deltaY: -300 * Math.log(1.5), clientX: 0, clientY: 0, bubbles: true, cancelable: true });
+    // happy-dom's WheelEvent ignores the mouse fields of its init (ctrlKey, clientX, clientY)
+    for (const [k, v] of Object.entries({ ctrlKey: true, clientX: 0, clientY: 0 })) Object.defineProperty(wheel, k, { value: v });
+    act(() => void viewport.dispatchEvent(wheel));
+    expect(wheel.defaultPrevented).toBe(true); // the page itself does not zoom
+    expect(canvas()).toMatch(/^translate\(-60(\.0+\d*)?px, -90(\.0+\d*)?px\) scale\(3(\.0+\d*)?\)$/);
+    // reset
+    act(() => (host.querySelector('[title="Reset zoom"]') as HTMLElement).click());
+    expect(canvas()).toBe("translate(0px, 0px) scale(1)");
+    act(() => (host.querySelector('[title="Zoom in"]') as HTMLElement).click());
+    expect(canvas()).toBe("translate(0px, 0px) scale(1.25)"); // around the center of a 0x0 test viewport
+  });
 });
