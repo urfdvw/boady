@@ -218,3 +218,23 @@ async def test_identification_tools_work_before_the_board_is_known(env, fake_cli
     assert req["params"]["data"] == "\x03"
     await ws.send({"type": "hw.response", "id": req["id"], "ok": True, "result": {}})
     await ws.wait(lambda m: m["type"] == "state" and m["device"].get("uid") == "ABCD1234", timeout=10)
+
+
+async def test_pull_reasks_for_edits_made_while_the_first_card_waits(env, board):
+    """Review 2, finding 3."""
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "p1", "type": "circuitpython"})
+    await ws.action("file.write", {"path": "src/code.py", "text": "local"}, "w")
+    await attach(ws)
+    first = await ws.wait(lambda m: m["type"] == "permission_request", timeout=10)
+    assert first["detail"]["files"] == ["src/code.py"]
+    (app.project.path / "src" / "new.py").write_text("written while the card waits")
+    await ws.send({"type": "permission_reply", "request_id": first["request_id"], "allow": True})
+    req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.read_all", timeout=10)
+    await ws.send({"type": "hw.response", "id": req["id"], "ok": True, "result": {"files": {"code.py": base64.b64encode(b"board").decode()}}})
+    second = await ws.wait(lambda m: m["type"] == "permission_request" and m["request_id"] != first["request_id"], timeout=10)
+    assert second["detail"]["files"] == ["src/new.py"]
+    await ws.send({"type": "permission_reply", "request_id": second["request_id"], "allow": False})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text") == "pull_declined")
+    assert (app.project.path / "src" / "new.py").exists()

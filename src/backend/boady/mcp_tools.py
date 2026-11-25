@@ -84,10 +84,12 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]
     if not ctx.bridge.connected:
         raise HardwareError("Device not connected.")
     _check_board(ctx)
+    # fingerprint first: everything changed after this moment is asked about again,
+    # including edits made while the first approval card is waiting
+    before = sync.manifest(root / "src")
     dirty = await _dirty_src(root)
     if dirty and ask and not await ctx.confirm("pull_overwrites", {"files": dirty}):
         return {"declined": True}
-    before = sync.manifest(root / "src")
     res = await ctx.bridge.request("fs.read_all", {}, timeout=300)
     while True:
         now = sync.manifest(root / "src")
