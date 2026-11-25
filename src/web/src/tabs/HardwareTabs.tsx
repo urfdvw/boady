@@ -3,6 +3,7 @@ import { XtermConsole } from "../components/XtermConsole";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Backend } from "../backend";
 import type { DeviceManager, PortName } from "../hw/device";
+import { REPL_KEYS } from "../hw/replKeys";
 import { translateError, useI18n } from "../i18n";
 
 export function useDevice(dm: DeviceManager | null): DeviceManager | null {
@@ -20,7 +21,6 @@ export function SerialTab({ backend, hw }: { backend: Backend; hw: DeviceManager
   const { t, lang } = useI18n();
   const dm = useDevice(hw);
   const [port, setPort] = useState<PortName>("repl");
-  const [line, setLine] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const hasData = !!dm?.conns.data;
   const active: PortName = port === "data" && !hasData ? "repl" : port;
@@ -54,26 +54,15 @@ export function SerialTab({ backend, hw }: { backend: Backend; hw: DeviceManager
       <XtermConsole key={active} history={dm.history[active]} readOnly={readOnly} onInput={(d) => !readOnly && send(d)} />
       {readOnly && <div className="notice">{agentLock ? t("serial.readonly") : t("serial.syncing")}</div>}
       {err && <div className="notice error">{err}</div>}
-      <div className="serial-input">
-        <input
-          value={line}
-          disabled={readOnly}
-          placeholder={t("serial.input")}
-          onChange={(e) => setLine(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              send(line + "\r");
-              setLine("");
-            }
-          }}
-        />
-        <button className="btn" disabled={readOnly} onClick={() => send("\x03")}>
-          Ctrl-C
-        </button>
-        <button className="btn" disabled={readOnly} onClick={() => send("\x04")}>
-          Ctrl-D
-        </button>
-        <button className="btn" onClick={() => dm.clearTerminal(active)}>
+      <div className="serial-keys" role="toolbar" aria-label={t("serial.keys")}>
+        {active === "repl" &&
+          REPL_KEYS.map((k) => (
+            <button key={k.id} className="btn serial-key" disabled={readOnly} title={t(k.meaning as any)} onClick={() => send(k.data)}>
+              <span className="serial-key-label">{k.label}</span>
+              <span className="serial-key-meaning">{t(k.meaning as any)}</span>
+            </button>
+          ))}
+        <button className="btn serial-key" onClick={() => dm.clearTerminal(active)}>
           {t("serial.clear")}
         </button>
       </div>

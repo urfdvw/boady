@@ -764,14 +764,30 @@ code {
   overflow: hidden;
 }
 
-.serial-input {
+/* function keys (D46): as wide as their text, one row, sideways scroll when it does not fit */
+.serial-keys {
   display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
   flex: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
 }
 
-.serial-input input {
+.serial-key {
+  flex: none;
+  white-space: nowrap;
+}
+
+.serial-key-label {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.serial-key-meaning {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .plot-canvas {

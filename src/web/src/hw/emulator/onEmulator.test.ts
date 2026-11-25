@@ -8,6 +8,7 @@ import { readFileSync } from "fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fromBase64, fromUtf8, sha256hex, toBase64, utf8 } from "../bytes";
 import { DeviceManager } from "../device";
+import { REPL_KEYS } from "../replKeys";
 import { EmulatorLink, InProcessHost } from "./link";
 import { PicoMachine } from "./pico";
 
@@ -295,6 +296,32 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       await type("\x03");
       await waitFor("KeyboardInterrupt", at, 30000);
       await waitFor(">>> ", at, 30000);
+    }, 120000);
+
+    it("every Serial tab key does the same on this firmware (D46)", async () => {
+      const key = (id: string) => REPL_KEYS.find((k) => k.id === id)!.data;
+      expect(REPL_KEYS.map((k) => k.id)).toEqual(["ctrl-c", "ctrl-d", "ctrl-e", "ctrl-a", "ctrl-b"]);
+      const press = async (data: string, expectText: string, ms = 30000) => {
+        const at = stream().length;
+        await dm.consoleWrite("repl", data);
+        return waitFor(expectText, at, ms);
+      };
+      const banner = runtime === "micropython" ? "MicroPython v1.29.0" : "Adafruit CircuitPython 10.3.2";
+      await press(key("ctrl-a"), "raw REPL; CTRL-B to exit"); // raw REPL
+      await press(key("ctrl-b"), banner); // back to the normal REPL
+      await waitFor(">>> ", stream().length - 10);
+      await press(key("ctrl-e"), "paste mode; Ctrl-C to cancel, Ctrl-D to finish"); // paste mode (both firmwares)
+      await press(key("ctrl-c"), ">>> "); // Ctrl-C cancels it
+      await press("while True: pass\r\r", "... ");
+      await press(key("ctrl-c"), "KeyboardInterrupt"); // interrupts a running program
+      await waitFor(">>> ", stream().length - 10);
+      await press(key("ctrl-d"), "soft reboot"); // soft reset / reload
+      if (runtime === "circuitpython") {
+        await waitFor("Press any key to enter the REPL", stream().length - 200, 30000);
+        await press("\r", ">>> ");
+      } else {
+        await waitFor(">>> ", stream().length - 10);
+      }
     }, 120000);
 
     it("shows GPIO levels and takes button input (Emulator tab, D42)", async () => {
