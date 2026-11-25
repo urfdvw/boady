@@ -136,8 +136,21 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] 
         changes = sync.apply_from_device(src, board_files) if scope is None else sync.apply_paths(src, board_files, sorted(scope))
     except ValueError as e:
         raise HardwareError(str(e)) from e
-    # the whole board was read, so the baseline is the whole board either way
-    ctx.set_baseline(sync.manifest_of(board_files))
+    board_manifest = sync.manifest_of(board_files)
+    if scope is None:
+        ctx.set_baseline(board_manifest)
+    else:
+        # Reading a file is not handling its change: only the taken files move
+        # to the board's state; every other board change stays visible to the
+        # next compare_with_device. Without a baseline, only the taken files
+        # are known, so all others will be reported (safe side).
+        base = dict(ctx.get_baseline() or {})
+        for rel in scope:
+            if rel in board_manifest:
+                base[rel] = board_manifest[rel]
+            else:
+                base.pop(rel, None)
+        ctx.set_baseline(base)
     if ctx.on_synced:
         await ctx.on_synced("pull", changes)
     await ctx.on_mirror_changed()

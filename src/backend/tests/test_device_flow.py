@@ -443,3 +443,25 @@ async def test_pull_refuses_non_canonical_paths(env, board):
             await task
         assert not any(m["type"] == "permission_request" for m in ws.inbox), bad
         assert (src / "code.py").read_text() == "local edit\n", bad
+
+
+
+async def test_partial_pull_keeps_other_board_changes_visible(env, board):
+    """Review 4, finding 2: pulling a.txt must not hide b.txt's board change."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "part", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"a.txt": b"1", "b.txt": b"1"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    await ws.action("git.commit", {"message": "board"}, "c")  # no local edits: no overwrite question
+    changed = {"a.txt": b"2", "b.txt": b"2"}
+    task = asyncio.create_task(mcp_tools.pull_from_device(app.tool_ctx, paths=["a.txt"]))
+    await answer_pull(ws, changed)
+    await task
+    task = asyncio.create_task(mcp_tools.compare_with_device(app.tool_ctx))
+    await answer_pull(ws, changed)
+    r = await task
+    assert r["changed_on_board"] == ["b.txt"]
