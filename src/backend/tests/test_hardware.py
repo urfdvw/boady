@@ -82,5 +82,13 @@ async def test_write_returns_cursor_and_locks():
 
 def test_decode_ctrl():
     assert decode_ctrl(r"\x03\x01abc\x04") == "\x03\x01abc\x04"
+    # Enter written as escape text: decoded only at the end (found with the emulator)
+    assert decode_ctrl(r"\r") == "\r"
+    assert decode_ctrl(r"print(1)\r") == "print(1)\r"
+    assert decode_ctrl(r"print(1)\r\n") == "print(1)\r"
+    assert decode_ctrl(r"print(1)\n") == "print(1)\r"
+    assert decode_ctrl("print(1)\r") == "print(1)\r"
+    assert decode_ctrl(r'exec("a\nb")') == r'exec("a\nb")'
+    assert decode_ctrl(r'exec("a\nb")\r') == r'exec("a\nb")' + "\r"
     assert decode_ctrl("\x03") == "\x03"
     assert decode_ctrl(r"\x05") == r"\x05"

@@ -22,8 +22,19 @@ USER_DECLINED = "User declined."
 _CTRL = re.compile(r"\\x0([1-4])")
 
 
+_TRAILING_ENTER = re.compile(r"(?:\\r|\\n)+$")
+
+
 def decode_ctrl(data: str) -> str:
-    r"""Turn literal ``\x01``..``\x04`` escapes into Ctrl-A..Ctrl-D."""
+    r"""Turn literal ``\x01``..``\x04`` escapes into Ctrl-A..Ctrl-D, and a literal
+    ``\r`` / ``\n`` at the very end into Enter.
+
+    Models sometimes write Enter the same way as the Ctrl escapes (a backslash
+    followed by ``r``). Only the end of ``data`` is decoded: there it can never be
+    meaningful Python, while ``\n`` inside the code (e.g. ``exec("a\nb")``) must
+    stay a Python escape.
+    """
+    data = _TRAILING_ENTER.sub(lambda m: "\r" * max(1, m.group(0).count("\\r")), data)
     return _CTRL.sub(lambda m: chr(int(m.group(1))), data)
 
 
@@ -60,7 +71,7 @@ READ_SCHEMA = {
 }
 WRITE_SCHEMA = {
     "type": "object",
-    "properties": {"data": {"type": "string", "description": "Text to write. \\x01-\\x04 mean Ctrl-A..Ctrl-D."}},
+    "properties": {"data": {"type": "string", "description": "Text to write. \\x01-\\x04 mean Ctrl-A..Ctrl-D. End a line with a real carriage return (Enter); a trailing backslash-r is also accepted as Enter."}},
     "required": ["data"],
 }
 
