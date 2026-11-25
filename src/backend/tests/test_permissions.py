@@ -83,3 +83,15 @@ def test_hard_block_git_dir():
     assert hard_block("Write", {"file_path": "/tmp/proj/.git/hooks/pre-commit"}, ROOT)
     assert hard_block("Edit", {"file_path": ".git/config"}, ROOT)
     assert hard_block("Write", {"file_path": "/tmp/proj/src/code.py"}, ROOT) is None
+
+
+def test_bash_circup_refused_through_linked_lib(tmp_path):
+    """Review 5, finding 2: the Bash circup entry needs the library tools' link guard."""
+    root = tmp_path / "proj"
+    (root / "src").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    cmd = {"command": "circup --offline --path src uninstall sensor"}
+    assert hard_block("Bash", cmd, root) is None
+    (root / "src" / "lib").symlink_to(outside)
+    assert "symlink_in_lib" in hard_block("Bash", cmd, root)

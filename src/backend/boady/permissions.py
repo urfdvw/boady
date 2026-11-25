@@ -150,6 +150,13 @@ def hard_block(tool: str, inp: dict[str, Any], root: Path) -> str | None:
     if prog == "circup":
         if not _circup_path_ok(argv, root):
             return "circup must be called with --path src (the project mirror)."
+        # same guard as the library tools: circup writes and deletes under src/lib
+        from . import libraries, sync
+
+        try:
+            libraries._check_lib(sync.mirror_src(root))
+        except (libraries.LibraryError, sync.MirrorPathError) as e:
+            return f"circup refused: {e}"
         return None
     if prog == "mpremote":
         return "mpremote cannot reach the board from the backend; use the boady library tool for MicroPython packages."
