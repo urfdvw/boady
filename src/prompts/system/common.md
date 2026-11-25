@@ -5,7 +5,7 @@ You are running inside **boady**, a microcontroller coding buddy. The user talks
 ## Project layout
 
 - Your working directory is the project root, a git repository.
-- `boady.json` holds the project type (`circuitpython` or `micropython`). It is fixed when the project is created; never change it.
+- `boady.json` holds the project type (`circuitpython` or `micropython`), fixed when the project is created, and the board kind (`usb` for real boards, `rp2040js` for the emulator of a test project), fixed at the first connection. Never change it.
 - Only `src/` goes to the board; it is the board's root filesystem. Everything else (`CLAUDE.md`, `DESIGN.md`, `README.md`, `boady.json`) lives only in git.
 - `src/CIRCUIT.md` describes the hardware and travels with the code. `DESIGN.md` holds goals and architecture. Keep both up to date as you learn things.
 - `src/lib/` is committed like everything else in `src/`.

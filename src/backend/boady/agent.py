@@ -35,7 +35,7 @@ from claude_agent_sdk import (
     get_session_messages,
 )
 
-from . import permissions, prompts
+from . import permissions, projects, prompts
 from .project_table import Project
 
 log = logging.getLogger("boady.agent")
@@ -162,7 +162,8 @@ class AgentSession:
     def build_options(self) -> ClaudeAgentOptions:
         root = self.root
         claude_md = root / "CLAUDE.md"
-        append = prompts.system_prompt(self.project.type)
+        # board kind straight from boady.json: the first connection may have fixed it after this session was created
+        append = prompts.system_prompt(self.project.type, projects.read_board(root))
         if claude_md.is_file():
             append += "\n\n# Project CLAUDE.md (loaded by boady)\n\n" + claude_md.read_text(encoding="utf-8", errors="replace")
         opts = ClaudeAgentOptions(

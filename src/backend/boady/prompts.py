@@ -11,9 +11,13 @@ def load(rel: str, root: Path = PROMPTS_DIR) -> str:
     return (root / rel).read_text(encoding="utf-8")
 
 
-def system_prompt(project_type: str) -> str:
-    """Boady system prompt for a project type: common rules + type specifics."""
-    return load("system/common.md") + "\n\n" + load(f"system/{project_type}.md")
+def system_prompt(project_type: str, board: str | None = None) -> str:
+    """Boady system prompt: common rules + type specifics (+ the emulator's limits
+    for a test project, ``board == "rp2040js"``)."""
+    text = load("system/common.md") + "\n\n" + load(f"system/{project_type}.md")
+    if board == "rp2040js":
+        text += "\n\n" + load("system/rp2040js.md")
+    return text
 
 
 def project_claude_md(project_type: str) -> str:
