@@ -94,18 +94,67 @@ def _safe_target(src: Path, rel: str) -> Path:
     return target
 
 
+def case_insensitive(d: Path) -> bool:
+    """Whether the file system holding ``d`` ignores case (macOS and Windows defaults)."""
+    name = d.name
+    flipped = name.swapcase()
+    if flipped == name:
+        return False
+    try:
+        return os.path.samefile(d, d.parent / flipped)
+    except OSError:
+        return False
+
+
+def case_collisions(paths: list[str]) -> list[tuple[str, str]]:
+    """Pairs of paths (or path prefixes) that differ only in case."""
+    seen: dict[str, str] = {}
+    out: list[tuple[str, str]] = []
+    for rel in sorted(paths):
+        parts = rel.split("/")
+        for i in range(1, len(parts) + 1):
+            spelled = "/".join(parts[:i])
+            key = spelled.casefold()
+            other = seen.setdefault(key, spelled)
+            if other != spelled and (other, spelled) not in out:
+                out.append((other, spelled))
+    return out
+
+
 def apply_from_device(src: Path, board_files: dict[str, str]) -> dict[str, list[str]]:
-    """Make the mirror ``src/`` equal to the board. ``board_files``: path -> base64."""
+    """Make the mirror ``src/`` equal to the board. ``board_files``: path -> base64.
+
+    Refuses, before changing anything, board files that cannot coexist in the
+    mirror (``A.txt`` and ``a.txt`` on a case-insensitive file system). Deletes
+    before writing, so a local ``Code.py`` replaced by the board's ``code.py``
+    is not written and then removed again.
+    """
     src.mkdir(parents=True, exist_ok=True)
+    board: dict[str, str] = {}
+    for rel, b64 in board_files.items():
+        rel = rel.strip("/")
+        if rel and not excluded(rel):
+            board[rel] = b64
+    if case_insensitive(src):
+        clashes = case_collisions(list(board))
+        if clashes:
+            a, b = clashes[0]
+            raise ValueError(f"case_collision: the board has both {a!r} and {b!r}; this computer's file system cannot keep both")
+    for rel in board:
+        _safe_target(src, rel)  # refuse unsafe board paths before touching anything
     current = mirror_files(src)
     added, modified, deleted = [], [], []
-    seen = set()
-    for rel, b64 in sorted(board_files.items()):
-        rel = rel.strip("/")
-        if not rel or excluded(rel):
-            continue
-        seen.add(rel)
-        data = base64.b64decode(b64)
+    for rel, p in current.items():
+        if rel not in board:
+            p.unlink()
+            deleted.append(rel)
+    _prune_empty_dirs(src)
+    for rel in sorted(board):
+        alias = case_alias(src, rel)
+        if alias:
+            raise ValueError(f"case_collision: {rel!r} would be written into the existing {alias!r}")
+    for rel in sorted(board):
+        data = base64.b64decode(board[rel])
         target = _safe_target(src, rel)
         if rel in current:
             if current[rel].read_bytes() == data:
@@ -115,11 +164,6 @@ def apply_from_device(src: Path, board_files: dict[str, str]) -> dict[str, list[
             added.append(rel)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-    for rel, p in current.items():
-        if rel not in seen:
-            p.unlink()
-            deleted.append(rel)
-    _prune_empty_dirs(src)
     return {"added": added, "modified": modified, "deleted": deleted}
 
 

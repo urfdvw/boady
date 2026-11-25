@@ -211,5 +211,6 @@
   "notice.board_kind_mismatch": "本项目的板子类型与已连接的板子不符（{msg}），未拉取。",
   "notice.emulator_other_project": "已连接的模拟器是另一个测试项目的板子（{msg}），未绑定到本项目。",
   "err.symlink_in_lib": "src/lib（或其中的某项）是符号链接；boady 不经链接管理库。",
-  "err.circup_missing": "后端的 Python 环境里没有安装 circup。"
+  "err.circup_missing": "后端的 Python 环境里没有安装 circup。",
+  "err.case_collision": "板上有仅大小写不同的文件，这台电脑的文件系统无法同时保存，未拉取任何文件。"
 }

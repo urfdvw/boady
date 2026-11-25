@@ -211,5 +211,6 @@
   "notice.board_kind_mismatch": "This project's board kind does not match the connected board ({msg}); nothing was pulled.",
   "notice.emulator_other_project": "The connected emulator is another test project's board ({msg}); it was not bound to this project.",
   "err.symlink_in_lib": "src/lib (or something in it) is a symbolic link; boady does not manage libraries through links.",
-  "err.circup_missing": "circup is not installed in the backend's Python environment."
+  "err.circup_missing": "circup is not installed in the backend's Python environment.",
+  "err.case_collision": "The board has files whose names differ only in case; this computer's file system cannot keep both, so nothing was pulled."
 }

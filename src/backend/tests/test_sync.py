@@ -1,3 +1,4 @@
+import pytest
 import base64
 
 from boady import sync
@@ -128,3 +129,39 @@ def test_case_alias(tmp_path):
     assert sync.case_alias(src, "new.py") is None
     assert sync.case_alias(src, "CODE.PY") == "code.py"
     assert sync.case_alias(src, "LIB/a.py") == "lib"
+
+
+def test_case_collisions():
+    assert sync.case_collisions(["A.txt", "a.txt", "b.txt"]) == [("A.txt", "a.txt")]
+    assert sync.case_collisions(["Lib/x.py", "lib/y.py"]) == [("Lib", "lib")]
+    assert sync.case_collisions(["lib/x.py", "lib/y.py"]) == []
+
+
+def test_full_pull_refuses_case_collisions_on_this_file_system(tmp_path, monkeypatch):
+    """Review 6, finding 2: A.txt and a.txt from the board must not merge into one mirror file."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "keep.py").write_text("local")
+    monkeypatch.setattr(sync, "case_insensitive", lambda d: True)
+    with pytest.raises(ValueError, match="case_collision"):
+        sync.apply_from_device(src, {"A.txt": b64(b"upper"), "a.txt": b64(b"lower")})
+    assert sorted(p.name for p in src.iterdir()) == ["keep.py"]  # nothing changed
+    assert (src / "keep.py").read_text() == "local"
+
+
+def test_full_pull_respelled_file_keeps_board_content(tmp_path):
+    """Local Code.py, board code.py: the result is the board's file, not a deleted one."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "Code.py").write_text("old")
+    res = sync.apply_from_device(src, {"code.py": b64(b"board")})
+    assert [p.name for p in src.iterdir()] == ["code.py"]
+    assert (src / "code.py").read_text() == "board"
+    assert res == {"added": ["code.py"], "modified": [], "deleted": ["Code.py"]}
+
+
+def test_case_insensitive_probe(tmp_path):
+    d = tmp_path / "src"
+    d.mkdir()
+    expected = (tmp_path / "SRC").exists()
+    assert sync.case_insensitive(d) is expected
