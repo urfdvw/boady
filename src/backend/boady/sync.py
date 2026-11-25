@@ -137,6 +137,10 @@ def apply_paths(src: Path, board_files: dict[str, str], paths: list[str]) -> dic
     bad = [p for p in paths if canonical_rel(p) is None]
     if bad:
         raise ValueError(f"not a canonical path: {bad[0]!r}")
+    for p in paths:
+        alias = case_alias(src, p)
+        if alias:
+            raise ValueError(f"{p!r} would reach {alias!r} (different spelling); use the exact name")
     board = {k.strip("/"): v for k, v in board_files.items()}
     added, modified, deleted = [], [], []
     for rel in paths:
@@ -183,6 +187,26 @@ def canonical_rel(rel: object) -> str | None:
     if any(p in ("", ".", "..") for p in parts):
         return None
     return rel
+
+
+def case_alias(src: Path, rel: str) -> str | None:
+    """The on-disk spelling if ``rel`` reaches an existing entry under another
+    spelling (case-insensitive file systems: ``CODE.PY`` -> ``code.py``), else None."""
+    d = src
+    parts = rel.split("/")
+    for i, part in enumerate(parts):
+        try:
+            names = os.listdir(d)
+        except OSError:
+            return None
+        if part in names:
+            d = d / part
+            continue
+        same = [n for n in names if n.casefold() == part.casefold()]
+        if same:
+            return "/".join(parts[:i] + [same[0]])
+        return None
+    return None
 
 
 def safe_mirror_file(src: Path, rel: str) -> Path | None:

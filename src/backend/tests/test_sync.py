@@ -117,3 +117,14 @@ def test_canonical_rel():
         assert sync.canonical_rel(ok) == ok
     for bad in ("", "./x", "x/.", "a//b", "a/../b", "/x", "x/", "a\\b", None, 3):
         assert sync.canonical_rel(bad) is None
+
+
+def test_case_alias(tmp_path):
+    src = tmp_path / "src"
+    (src / "lib").mkdir(parents=True)
+    (src / "code.py").write_text("x")
+    (src / "lib" / "a.py").write_text("x")
+    assert sync.case_alias(src, "code.py") is None
+    assert sync.case_alias(src, "new.py") is None
+    assert sync.case_alias(src, "CODE.PY") == "code.py"
+    assert sync.case_alias(src, "LIB/a.py") == "lib"

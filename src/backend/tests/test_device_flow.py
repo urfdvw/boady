@@ -432,7 +432,7 @@ async def test_pull_refuses_non_canonical_paths(env, board):
     await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
     src = app.project.path / "src"
     (src / "code.py").write_text("local edit\n")
-    for bad in (["./code.py"], ["lib/../code.py"], ["/code.py"], ["code.py/"], ["a//b"], ["lib\\x.py"], []):
+    for bad in (["./code.py"], ["lib/../code.py"], ["/code.py"], ["code.py/"], ["a//b"], ["lib\\x.py"], [], ["CODE.PY"], ["Code.py"]):
         task = asyncio.create_task(mcp_tools.pull_from_device(app.tool_ctx, paths=bad))
         # behave like a real frontend: answer a board read if one is made
         try:

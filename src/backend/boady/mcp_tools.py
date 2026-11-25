@@ -111,6 +111,12 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] 
         bad = [p for p in paths if sync.canonical_rel(p) is None]
         if bad or not paths:
             raise HardwareError(f"paths must be plain src-relative paths like 'lib/x.py' (got {bad[0]!r})" if bad else "paths is empty")
+        # one path, one file: on case-insensitive file systems CODE.PY reaches code.py,
+        # which the local-edit check (exact names) would not see
+        aliases = [(p, sync.case_alias(src, p)) for p in paths]
+        aliases = [(p, a) for p, a in aliases if a]
+        if aliases:
+            raise HardwareError(f"{aliases[0][0]!r} names the existing file {aliases[0][1]!r} with a different spelling; use the exact name")
         scope = set(paths)
     if scope is not None and any(sync.excluded(p) for p in scope):
         raise HardwareError("These files are never synced: " + ", ".join(sorted(p for p in scope if sync.excluded(p))))
