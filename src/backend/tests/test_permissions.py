@@ -110,8 +110,8 @@ def _case_insensitive(d: Path) -> bool:
         probe.unlink()
 
 
-def test_git_dir_is_protected_under_any_spelling_or_link(tmp_path):
-    """Review 8, finding 1: on a case-insensitive file system .GIT/config is .git/config."""
+def test_git_dir_is_protected_through_a_link(tmp_path):
+    """Review 8, finding 1: a link to .git is .git."""
     from boady import files
     from boady.util import in_git_dir
 
@@ -123,13 +123,24 @@ def test_git_dir_is_protected_under_any_spelling_or_link(tmp_path):
     assert in_git_dir(root, Path("gitlink/hooks/new"))
     with pytest.raises(files.PathError):
         files.write(root, "gitlink/config", "x")
-    if _case_insensitive(tmp_path):
-        for p in (".GIT/config", ".Git/hooks/pre-commit", str(root / ".GIT" / "config")):
-            assert hard_block("Edit", {"file_path": p}, root), p
-        with pytest.raises(files.PathError):
-            files.write(root, ".GIT/config", "evil")
-        with pytest.raises(files.PathError):
-            files.entry(root, ".GIT")
-        assert (root / ".git" / "config").read_text() == "[core]\n"
     assert hard_block("Write", {"file_path": "src/code.py"}, root) is None
     assert not in_git_dir(root, Path("src/.gitignore"))
+
+
+def test_git_dir_is_protected_under_another_spelling(tmp_path):
+    """Review 8, finding 1. Only meaningful where the file system ignores case (macOS,
+    Windows): reported as skipped elsewhere instead of passing without checking (review 10)."""
+    from boady import files
+
+    if not _case_insensitive(tmp_path):
+        pytest.skip("case-sensitive file system: .GIT is a different directory here")
+    root = tmp_path / "proj"
+    (root / ".git").mkdir(parents=True)
+    (root / ".git" / "config").write_text("[core]\n")
+    for p in (".GIT/config", ".Git/hooks/pre-commit", str(root / ".GIT" / "config")):
+        assert hard_block("Edit", {"file_path": p}, root), p
+    with pytest.raises(files.PathError):
+        files.write(root, ".GIT/config", "evil")
+    with pytest.raises(files.PathError):
+        files.entry(root, ".GIT")
+    assert (root / ".git" / "config").read_text() == "[core]\n"
