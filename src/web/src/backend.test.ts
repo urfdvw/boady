@@ -174,3 +174,17 @@ describe("chat state (review 7, coverage)", () => {
     expect(b.selectRequired).toBeNull();
   });
 });
+
+
+describe("project-scoped actions (review 13, finding 1)", () => {
+  it("name the project the page shows", () => {
+    const { b, conn } = setup();
+    conn.onMessage({ type: "state", project: { id: "pA" }, device: {}, serial: { lock: {} } });
+    b.action("file.write", { path: "src/x.py", text: "1" });
+    b.action("git.commit", { message: "m" });
+    b.action("project.select", { id: "pB" });
+    b.action("prefs.set", { language: "en" });
+    const sent = conn.sent.filter((m) => m.type === "action").map((m) => [m.action, m.params.project]);
+    expect(sent).toEqual([["file.write", "pA"], ["git.commit", "pA"], ["project.select", undefined], ["prefs.set", undefined]]);
+  });
+});

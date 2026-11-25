@@ -312,6 +312,10 @@ export class Backend {
   // --- outgoing ---
   action<T = any>(action: string, params: object = {}): Promise<T> {
     const id = `${this.idPrefix}-${this.nextId++}`;
+    // work on a project's files, git or board names the project this page shows; the backend
+    // refuses it if another project is open by now (review 13)
+    const project = this.state?.project?.id;
+    if (project && /^(file|git|lib|device)\./.test(action)) params = { project, ...params };
     return new Promise<T>((resolve, reject) => {
       if (this.status !== "connected") {
         reject(new Error("not connected"));

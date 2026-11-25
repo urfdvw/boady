@@ -238,5 +238,6 @@
   "emu.input": "input",
   "emu.pinTitle": "{pin} · {dir} · {level}",
   "emu.buttonFor": "Button on {pin}",
-  "emu.hint": "LEDs are real LEDs: lit only while the pin is driven (by the program or a button) to the level they light on. Buttons apply a level from outside (H/L); released, the pin's pull resistor decides. Tap a pin name for its options. Pinch or Ctrl+wheel to zoom, drag to move."
+  "emu.hint": "LEDs are real LEDs: lit only while the pin is driven (by the program or a button) to the level they light on. Buttons apply a level from outside (H/L); released, the pin's pull resistor decides. Tap a pin name for its options. Pinch or Ctrl+wheel to zoom, drag to move.",
+  "err.project_changed": "Another project was opened meanwhile; nothing was changed. Try again."
 }

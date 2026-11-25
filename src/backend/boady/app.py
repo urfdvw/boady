@@ -79,6 +79,8 @@ class App:
         self.tool_ctx.get_baseline_texts = self.get_baseline_texts
         self.tool_ctx.project_info = lambda: (self.project.type, self.project.mpy_version) if self.project else None
         self._tasks: set[asyncio.Task] = set()
+        self._state_seq = itertools.count(1)
+        self._state_sent = 0
         self._identify_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------ io
@@ -179,8 +181,18 @@ class App:
         }
 
     async def push_state(self) -> None:
-        if self.conn is not None:
-            await self.send(await self.snapshot())
+        """Send a full state. Building it awaits git; a snapshot overtaken meanwhile by a
+        newer one or by a project switch is dropped, so an old project's state can never
+        arrive after the new one's (review 13)."""
+        if self.conn is None:
+            return
+        seq = next(self._state_seq)
+        snap = await self.snapshot()
+        current = self.project.id if self.project else None
+        if seq < self._state_sent or (snap.get("project") or {}).get("id") != current:
+            return
+        self._state_sent = seq
+        await self.send(snap)
 
     def save_prefs(self) -> None:
         write_json(self.paths.prefs_file, self.prefs)
@@ -593,7 +605,13 @@ class App:
             raise projects.ProjectError("no_project")
         return self.project.path
 
+    # actions on the open project's files, git or board: refused if the page meant another project
+    _PROJECT_SCOPED = ("file.", "git.", "lib.", "device.")
+
     async def run_action(self, name: str, p: dict[str, Any]) -> Any:
+        if name.startswith(self._PROJECT_SCOPED) and "project" in p:
+            if p["project"] != (self.project.id if self.project else None):
+                raise projects.ProjectError("project_changed")
         # --- onboarding (project.*) ---
         if name == "project.create":
             root = await projects.create(self.paths.projects_dir, p.get("name", ""), p.get("type", ""))

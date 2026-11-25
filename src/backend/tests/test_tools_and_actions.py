@@ -304,3 +304,43 @@ async def test_partial_pull_with_another_unicode_spelling_is_refused_not_silent(
     assert res.get("is_error") and "different spelling" in body(res)["error"]
     assert (app.project.path / "src" / nfc).read_text() == "uncommitted local edit"
     assert not [m for m in ws.inbox if m.get("type") in ("hw.request", "permission_request")]
+
+
+async def test_an_old_projects_state_never_overtakes_the_new_one(env, monkeypatch):
+    """Review 13, finding 1: A's slow git status, then B opened: states went out B, A."""
+    from boady import app as app_mod
+
+    app, client = env
+    ws = await connect(client, app.token)
+    a = (await ws.action("project.create", {"name": "a", "type": "circuitpython"}, "1"))["result"]["project"]["id"]
+    b = (await ws.action("project.create", {"name": "b", "type": "circuitpython"}, "2"))["result"]["project"]["id"]
+    await ws.action("project.select", {"id": a}, "3")
+    real = app_mod.gitops.status
+    gate = asyncio.Event()
+
+    async def slow_for_a(root):
+        if root.name == "a":
+            await gate.wait()
+        return await real(root)
+
+    monkeypatch.setattr(app_mod.gitops, "status", slow_for_a)
+    slow = asyncio.create_task(app.push_state())  # A's state, stuck in git status
+    await asyncio.sleep(0.05)
+    ws.inbox = [m for m in ws.inbox if m.get("type") != "state"]  # only what comes from now on counts
+    await ws.action("project.select", {"id": b}, "4")
+    gate.set()
+    await slow
+    await ws.action("state.refresh", {}, "5")
+    for _ in range(3):  # let everything sent so far arrive
+        try:
+            ws.inbox.append(await ws.recv(timeout=0.2))
+        except Exception:
+            break
+    ids = [(m["project"] or {}).get("id") for m in ws.inbox if m.get("type") == "state"]
+    assert ids and set(ids) == {b}, ids  # never A after B was opened
+
+    # a write meant for A (the page still showed A) must not land in B
+    r = await ws.action("file.write", {"path": "src/code.py", "text": "for A", "project": a}, "6")
+    assert not r["ok"] and r["error"] == "project_changed"
+    assert (app.project.path / "src" / "code.py").read_text() != "for A"
+    assert (await ws.action("file.write", {"path": "src/code.py", "text": "for B", "project": b}, "7"))["ok"]
