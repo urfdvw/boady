@@ -49,7 +49,21 @@ export interface PinParts {
 /** A button to GND with the pin's pull-up is the common wiring. */
 export const DEFAULT_PARTS: PinParts = { button: "momentary", drive: "low", led: "activeHigh" };
 
-export const isLit = (p: PinParts, level: boolean): boolean => (p.led === "activeHigh" ? level : !level);
+/**
+ * A real LED (review 11, Master: "strictly like the hardware"): current flows only when
+ * something drives the pin, the chip's output or a pressed button. ``activeHigh`` is
+ * pin -> resistor -> LED -> GND, lit when driven high; ``activeLow`` is 3V3 -> resistor ->
+ * LED -> pin, lit when driven low. A pull resistor (~50 kOhm) alone does not light it.
+ */
+export const isLit = (p: PinParts, level: boolean, driven: boolean): boolean => driven && (p.led === "activeHigh" ? level : !level);
+
+/**
+ * The Pico's own LED (datasheet 2.1: "GPIO25 OP Connected to user LED"; TP5, between
+ * resistor and LED, "will only swing from 0 V to the LED forward voltage"): GPIO25 ->
+ * resistor -> LED -> GND. Lit only while GP25 is an output driven high.
+ */
+export const onboardLit = (s: { levels: number; outputs: number }): boolean =>
+  bit(s.outputs, ONBOARD_LED) && bit(s.levels, ONBOARD_LED);
 
 /** What the button applies to the pin: a level, or ``null`` (not driven: the pull decides). */
 export const driveOf = (p: PinParts, active: boolean): boolean | null => (active ? p.drive === "high" : null);

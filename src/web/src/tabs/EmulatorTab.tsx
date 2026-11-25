@@ -12,11 +12,11 @@ import {
   DEFAULT_PARTS,
   HeldButtons,
   LEFT_PINS,
-  ONBOARD_LED,
   RIGHT_PINS,
   bit,
   driveOf,
   isLit,
+  onboardLit,
   loadParts,
   partsOf,
   pinch,
@@ -220,7 +220,7 @@ export function EmulatorTab({ backend, hw }: { backend: Backend; hw: DeviceManag
       >
         <div className="emu-canvas" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}>
           <svg viewBox={`${BTN_X.left - BTN_W / 2 - 8} -24 ${BTN_X.right - BTN_X.left + BTN_W + 16} ${H + 48}`} className={pins ? "" : "emu-off"}>
-            <Board onboardLit={bit(state.levels, ONBOARD_LED)} />
+            <Board onboardLit={!!pins && onboardLit(state)} />
             {rows.map(({ p, side, y }) => (
               <PinRow
                 key={p.n}
@@ -330,7 +330,7 @@ function PinRow({ p, side, y, state, parts, active, selected, enabled, onSelect,
   const g = p.gpio;
   const level = bit(state.levels, g);
   const out = bit(state.outputs, g);
-  const lit = enabled && isLit(parts, level);
+  const lit = enabled && isLit(parts, level, out || active); // driven by the chip or by the button
   const desc = t("emu.pinTitle", {
     pin: `GP${g}`,
     dir: out ? t("emu.output") : t("emu.input"),

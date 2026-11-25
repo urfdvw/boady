@@ -226,12 +226,12 @@
   "emu.drive": "按下时驱动",
   "emu.high": "高电平",
   "emu.low": "低电平",
-  "emu.led": "指示灯点亮于",
+  "emu.led": "指示灯点亮于（引脚→LED→GND：高，3V3→LED→引脚：低）",
   "emu.activeHigh": "高电平",
   "emu.activeLow": "低电平",
   "emu.output": "输出",
   "emu.input": "输入",
   "emu.pinTitle": "{pin} · {dir} · {level}",
   "emu.buttonFor": "{pin} 上的按键",
-  "emu.hint": "指示灯显示各引脚的电平。按键从外部施加电平（H/L）；松开时由引脚的上下拉电阻决定。点引脚名可设置选项。双指或 Ctrl+滚轮缩放，拖动可平移。"
+  "emu.hint": "指示灯按真实 LED 模拟：只有引脚被驱动（程序输出或按键）到点亮电平时才亮。按键从外部施加电平（H/L）；松开时由引脚的上下拉电阻决定。点引脚名可设置选项。双指或 Ctrl+滚轮缩放，拖动可平移。"
 }

@@ -226,12 +226,12 @@
   "emu.drive": "Pressed drives",
   "emu.high": "high",
   "emu.low": "low",
-  "emu.led": "LED lights on",
+  "emu.led": "LED lights on (pin→LED→GND: high, 3V3→LED→pin: low)",
   "emu.activeHigh": "high",
   "emu.activeLow": "low",
   "emu.output": "output",
   "emu.input": "input",
   "emu.pinTitle": "{pin} · {dir} · {level}",
   "emu.buttonFor": "Button on {pin}",
-  "emu.hint": "LEDs show each pin's level. Buttons apply a level from outside (H/L); released, the pin's pull resistor decides. Tap a pin name for its options. Pinch or Ctrl+wheel to zoom, drag to move."
+  "emu.hint": "LEDs are real LEDs: lit only while the pin is driven (by the program or a button) to the level they light on. Buttons apply a level from outside (H/L); released, the pin's pull resistor decides. Tap a pin name for its options. Pinch or Ctrl+wheel to zoom, drag to move."
 }

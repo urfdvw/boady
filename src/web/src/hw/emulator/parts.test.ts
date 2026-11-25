@@ -8,6 +8,7 @@ import {
   RIGHT_PINS,
   driveOf,
   isLit,
+  onboardLit,
   pinch,
   readParts,
   zoomAt,
@@ -23,9 +24,12 @@ describe("emulator tab parts (D42)", () => {
   });
 
   it("LEDs light on high or on low; buttons drive their level or nothing", () => {
-    expect(isLit(DEFAULT_PARTS, true)).toBe(true);
-    expect(isLit({ ...DEFAULT_PARTS, led: "activeLow" }, true)).toBe(false);
-    expect(isLit({ ...DEFAULT_PARTS, led: "activeLow" }, false)).toBe(true);
+    expect(isLit(DEFAULT_PARTS, true, true)).toBe(true);
+    expect(isLit({ ...DEFAULT_PARTS, led: "activeLow" }, true, true)).toBe(false);
+    expect(isLit({ ...DEFAULT_PARTS, led: "activeLow" }, false, true)).toBe(true);
+    // a real LED: nothing drives the pin (an input with only its pull resistor): dark
+    expect(isLit(DEFAULT_PARTS, true, false)).toBe(false);
+    expect(isLit({ ...DEFAULT_PARTS, led: "activeLow" }, false, false)).toBe(false);
     expect(driveOf(DEFAULT_PARTS, true)).toBe(false); // default: a button to GND
     expect(driveOf({ ...DEFAULT_PARTS, drive: "high" }, true)).toBe(true);
     expect(driveOf({ ...DEFAULT_PARTS, drive: "high" }, false)).toBeNull(); // released: the pull decides
@@ -71,5 +75,12 @@ describe("emulator tab parts (D42)", () => {
     expect(b.releaseAll()).toBe(true);
     expect(b.releaseAll()).toBe(false);
     expect(calls).toEqual([[14, false], [3, true], [14, null], [3, null]]);
+  });
+
+  it("the on-board LED is GP25 -> resistor -> LED -> GND, lit only when driven high (datasheet 2.1)", () => {
+    const g25 = 1 << 25;
+    expect(onboardLit({ levels: g25, outputs: g25 })).toBe(true); // output high
+    expect(onboardLit({ levels: 0, outputs: g25 })).toBe(false); // output low
+    expect(onboardLit({ levels: g25, outputs: 0 })).toBe(false); // input pulled up: no current worth seeing
   });
 });

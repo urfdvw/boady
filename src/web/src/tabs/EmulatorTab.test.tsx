@@ -15,7 +15,7 @@ import { EmulatorTab } from "./EmulatorTab";
 function fakes() {
   const calls: [number, boolean | null][] = [];
   const pins = {
-    pins: { levels: 1 << 14, outputs: 0 },
+    pins: { levels: (1 << 14) | (1 << 25) | (1 << 5), outputs: (1 << 14) | (1 << 25) }, // GP14, GP25 outputs high; GP5 a pulled-up input
     subscribe: () => () => {},
     setPin: (g: number, v: boolean | null) => void calls.push([g, v]),
   };
@@ -144,5 +144,13 @@ describe("Emulator tab in a DOM", () => {
     expect(canvas()).toBe("translate(0px, 0px) scale(1)");
     act(() => (host.querySelector('[title="Zoom in"]') as HTMLElement).click());
     expect(canvas()).toBe("translate(0px, 0px) scale(1.25)"); // around the center of a 0x0 test viewport
+  });
+
+  it("LEDs light like real LEDs: only a driven pin lights its LED (review 11, Master)", () => {
+    const ledOf = (pin: string) =>
+      [...host.querySelectorAll(".emu-led")].find((e) => e.closest("g")?.querySelector(".emu-label")?.firstChild?.textContent === pin)!;
+    expect(ledOf("GP14").getAttribute("class")).toContain("lit"); // output high
+    expect(ledOf("GP5").getAttribute("class")).not.toContain("lit"); // pulled-up input, nothing drives it
+    expect(host.querySelector(".emu-led-smd")!.getAttribute("class")).toContain("lit"); // GP25 output high
   });
 });
