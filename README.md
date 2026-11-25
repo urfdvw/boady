@@ -37,7 +37,7 @@ python run.py
   └── README.md
   ```
 
-- **Tabs**: Chat, Files, Version, Serial, Plot, Library, Device, Settings. Click a tab to open it; on a computer Ctrl/Cmd-click opens the two most recently used tabs side by side; on a touch screen press two tabs with two fingers. Landscape puts the tab bar on top and splits left/right; portrait puts it on the left and splits top/bottom.
+- **Tabs**: Chat, Files, Version, Serial, Plot, Library, Device, Emulator (test projects only), Settings. Click a tab to open it; on a computer Ctrl/Cmd-click opens the two most recently used tabs side by side; on a touch screen press two tabs with two fingers. Landscape puts the tab bar on top and splits left/right; portrait puts it on the left and splits top/bottom.
 - **Chat**: Claude edits the project mirror. Reading and editing inside the project is automatic; anything outside the project, git commands that change history, and uploads to the board ask for your approval in the chat. Stop a turn with the stop button.
 - **Version**: see changed files and their diff, commit, reset one file or everything, push (or create a GitHub repo). boady never commits or pushes on its own.
 - **Connecting a board** (desktop Chrome): Device tab → **Connect board** and pick the board's serial port. boady asks Claude to identify the board (UID, runtime, firmware), opens the project bound to that board (or asks you to choose / create one), and pulls the board's files into `src/` — they show up as changes in the Version tab for you to commit or reset. If `src/` has uncommitted edits you are asked first.
