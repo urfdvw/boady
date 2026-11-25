@@ -42,8 +42,19 @@ def _check_lib(src: Path) -> None:
 
 
 def _circup() -> list[str]:
-    exe = shutil.which("circup")
-    return [exe] if exe else [sys.executable, "-m", "circup"]
+    """The circup console script of this Python environment (e.g. the venv, also
+    when run.py is started as .venv/bin/python without activating it), else PATH.
+
+    circup has no ``__main__`` module, so ``python -m circup`` cannot work.
+    """
+    exe_dir = Path(sys.executable).parent
+    for name in ("circup", "circup.exe"):
+        if (exe_dir / name).is_file():
+            return [str(exe_dir / name)]
+    found = shutil.which("circup")
+    if not found:
+        raise LibraryError("circup_missing: install the backend requirements (pip install -r src/backend/requirements.txt)")
+    return [found]
 
 
 def _check_ready(src: Path) -> None:

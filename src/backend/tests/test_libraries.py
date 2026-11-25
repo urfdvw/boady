@@ -143,3 +143,19 @@ async def test_library_work_refuses_a_link_inside_lib(tmp_path):
     with pytest.raises(libraries.LibraryError, match="lib/pkg"):
         await libraries.uninstall("micropython", src, ["pkg"])
     assert (outside / "x.py").exists()
+
+
+
+def test_circup_found_next_to_python_without_path(tmp_path, monkeypatch):
+    """Review 5, finding 5: .venv/bin/python run.py without an activated venv."""
+    import shutil as _shutil
+
+    bindir = tmp_path / "venv" / "bin"
+    bindir.mkdir(parents=True)
+    (bindir / "circup").write_text("#!/bin/sh\n")
+    monkeypatch.setattr(sys, "executable", str(bindir / "python"))
+    monkeypatch.setattr(_shutil, "which", lambda name: None)
+    assert libraries._circup() == [str(bindir / "circup")]
+    (bindir / "circup").unlink()
+    with pytest.raises(libraries.LibraryError, match="circup_missing"):
+        libraries._circup()
