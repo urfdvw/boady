@@ -104,6 +104,14 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 - *Frontend disconnect:* hardware work in progress is aborted and its late replies are never sent on a newer connection.
 - *Files tab:* the open file and unsaved text are kept per project outside the tab, so switching tabs does not lose them; closing the page with unsaved edits asks first.
 
+**D35 — Second review round (2026-11-24).** Rules changed or clarified:
+- *Board guard (amends D34):* the identification call's two tools are exempt; it has to talk to the board before it has a UID.
+- *Mirror root:* `src/` must be a real directory inside the project. A `src` symlink (or one resolving outside) is refused by sync and library operations, and a cloned repository with one is unfit. Inside `src/`, symlinks are neither listed, synced nor followed when deleting.
+- *Pull consent (amends D34):* the fingerprint is taken before the first overwrite question, so edits made while that card waits are asked about too.
+- *Action results* go only to the window that sent the request; request ids carry a per-page prefix.
+- *MSC sync* holds the REPL lock and the busy flag from turning autoreload off to restoring it, and checks for cancellation between deletions.
+- *Files tab:* a file read answer applies only if no newer read started and the editor text did not change meanwhile.
+
 ## Pre-check checklist (needs Master)
 
 Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)
