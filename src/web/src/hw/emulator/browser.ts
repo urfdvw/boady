@@ -131,12 +131,13 @@ async function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
   });
 }
 
-interface Saved {
+export interface Saved {
   flash: Uint8Array | null;
   uid: Uint8Array;
 }
 
-async function load(rt: Runtime): Promise<Saved | undefined> {
+/** Exported for tests. */
+export async function load(rt: Runtime): Promise<Saved | undefined> {
   try {
     return await idb<Saved | undefined>("readonly", (s) => s.get(rt));
   } catch {
@@ -144,7 +145,8 @@ async function load(rt: Runtime): Promise<Saved | undefined> {
   }
 }
 
-async function store(rt: Runtime, saved: Saved): Promise<void> {
+/** Exported for tests. */
+export async function store(rt: Runtime, saved: Saved): Promise<void> {
   try {
     await idb("readwrite", (s) => s.put(saved, rt));
   } catch {

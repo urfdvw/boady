@@ -253,6 +253,7 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
     }
 
     it("persists the filesystem in its flash image", async () => {
+      await dm.handle("fs.apply", { files: { "persist.txt": toBase64(utf8("kept across restarts\n")) }, delete: [] }, signal());
       const flash = await (link as unknown as { host: InProcessHost }).host.flash();
       const pico2 = new PicoMachine({ firmware: new Uint8Array(read(FIRMWARE[runtime])), flash, uid: UID });
       let out = "";
@@ -263,10 +264,10 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       await sleep(1000);
       pico2.write(utf8("\r"));
       for (let i = 0; i < 3000 && !out.includes(">>> "); i++) await sleep(20);
-      pico2.write(utf8("import os;print(sorted(os.listdir('/lib')))\r"));
-      for (let i = 0; i < 3000 && !out.includes("helper.py"); i++) await sleep(20);
+      pico2.write(utf8("print(repr(open('/persist.txt').read()))\r"));
+      for (let i = 0; i < 3000 && !out.includes("'kept across restarts\\n'"); i++) await sleep(20);
       pico2.stop();
-      expect(out).toContain("'helper.py'");
+      expect(out).toContain("'kept across restarts\\n'"); // content, not just the name
     }, 120000);
   });
 }
