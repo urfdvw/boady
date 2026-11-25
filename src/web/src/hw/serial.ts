@@ -7,7 +7,20 @@
  */
 export const BAUD = 115200;
 
-export class PortConn {
+/** What DeviceManager needs from a serial connection: a real port or the emulator. */
+export interface SerialLink {
+  readonly info: { vid?: number; pid?: number };
+  /** The Web Serial port, or null for the emulator. */
+  readonly port: SerialPort | null;
+  /** Set for the testing-only emulator. */
+  readonly emulated?: { runtime: string; firmware: string };
+  onData: (b: Uint8Array) => void;
+  onLost: () => void;
+  write(b: Uint8Array): Promise<void>;
+  close(): Promise<void>;
+}
+
+export class PortConn implements SerialLink {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private loop: Promise<void> | null = null;

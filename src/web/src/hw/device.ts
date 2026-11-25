@@ -11,7 +11,7 @@ import { cpAutoreloadOff, cpAutoreloadRestore, cpFinishWrite, cpPrepareWrite, cp
 import * as msc from "./msc";
 import { PlotBuffer } from "./plot";
 import { RawRepl } from "./rawRepl";
-import { PortConn } from "./serial";
+import { PortConn, type SerialLink } from "./serial";
 import { bootOutUid, excluded, plan } from "./syncRules";
 import { Terminal } from "./terminal";
 
@@ -45,7 +45,7 @@ export function choosePorts<P extends { getInfo(): SerialPortInfo }>(available: 
 export class DeviceManager implements Hardware {
   caps: HardwareCaps;
   mode = "browser" as const;
-  conns: Partial<Record<PortName, PortConn>> = {};
+  conns: Partial<Record<PortName, SerialLink>> = {};
   terms: Record<PortName, Terminal> = { repl: new Terminal(), data: new Terminal() };
   plot = new PlotBuffer(500);
   drive: FileSystemDirectoryHandle | null = null;
@@ -88,7 +88,10 @@ export class DeviceManager implements Hardware {
     this.drive = await msc.loadDriveHandle();
     if (this.drive) this.driveOk = await msc.hasPermission(this.drive).catch(() => false);
     if (!this.caps.serial) return;
-    navigator.serial.addEventListener("connect", () => this.autoConnect());
+    navigator.serial.addEventListener("connect", async () => {
+      if (this.emulated) await this.disconnect(false); // a real board replaces the emulator
+      await this.autoConnect();
+    });
     navigator.serial.addEventListener("disconnect", (e: Event) => {
       const port = (e as any).target as SerialPort;
       if (Object.values(this.conns).some((c) => c?.port === port)) this.disconnect(false);
@@ -105,11 +108,32 @@ export class DeviceManager implements Hardware {
     return !!this.conns.repl;
   }
 
+  /** The testing-only emulator, if that is what is connected. */
+  get emulated(): SerialLink["emulated"] {
+    return this.conns.repl?.emulated;
+  }
+
+  /**
+   * Use an emulated Pico as the board (testing only, D36). It goes through the
+   * same path as a real port: identification, sync, console and plot.
+   */
+  async connectEmulator(link: SerialLink): Promise<void> {
+    await this.disconnect(true);
+    this.chosen = [];
+    this.conns = { repl: link };
+    link.onData = (b) => this.onData("repl", b);
+    link.onLost = () => this.disconnect(false);
+    this.error = null;
+    this.announce();
+    this.bump();
+  }
+
   private announce() {
-    const info = this.conns.repl!.info;
+    const repl = this.conns.repl!;
+    const info = repl.info;
     this.sink?.send({
       type: "device.attached",
-      usb: { vid: info.vid ?? null, pid: info.pid ?? null, msc: null },
+      usb: { vid: info.vid ?? null, pid: info.pid ?? null, msc: null, ...(repl.emulated ? { emulator: repl.emulated } : {}) },
       ports: (Object.keys(this.conns) as PortName[]).filter((p) => this.conns[p]),
     });
   }
@@ -131,7 +155,8 @@ export class DeviceManager implements Hardware {
   /** User gesture: grant the second CDC interface (CircuitPython data port). */
   async requestDataPort(): Promise<void> {
     const repl = this.conns.repl;
-    if (!repl) return;
+    if (!repl?.port) return;
+    const replPort = repl.port;
     const info = repl.info;
     let port: SerialPort;
     try {
@@ -139,8 +164,8 @@ export class DeviceManager implements Hardware {
     } catch {
       return;
     }
-    if (port === repl.port) return;
-    this.chosen = [repl.port, port];
+    if (port === replPort) return;
+    this.chosen = [replPort, port];
     await this.disconnect(true);
     await this.autoConnect();
   }
@@ -255,7 +280,7 @@ export class DeviceManager implements Hardware {
     return this.sink?.state()?.project?.type === "micropython" ? ["/rom"] : [];
   }
 
-  private port(name: PortName): PortConn {
+  private port(name: PortName): SerialLink {
     const c = this.conns[name];
     if (!c) throw new Error(name === "data" ? "No data serial port is open." : "Device not connected.");
     return c;
@@ -338,7 +363,7 @@ export class DeviceManager implements Hardware {
   async pickChannel(): Promise<"msc" | "serial"> {
     const st = this.sink?.state();
     let ch: "msc" | "serial" = "serial";
-    if (st?.project?.type === "circuitpython" && this.drive && st.device.uid) {
+    if (!this.emulated && st?.project?.type === "circuitpython" && this.drive && st.device.uid) {
       this.driveOk = await msc.hasPermission(this.drive).catch(() => false);
       if (this.driveOk) {
         const uid = bootOutUid((await msc.readText(this.drive, "boot_out.txt")) ?? "");
@@ -443,6 +468,7 @@ export class DeviceManager implements Hardware {
       await cpFinishWrite(r, st);
       restart = type === "circuitpython";
     });
+    await (this.conns.repl as { checkpoint?: () => Promise<void> } | undefined)?.checkpoint?.(); // emulator: persist its flash
     if (restart) await this.exclusive(() => this.port("repl").write(utf8("\x04"))); // soft reload runs code.py
     return { written, deleted, channel: "serial", restarted: restart };
   }

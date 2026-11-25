@@ -1,0 +1,17 @@
+{
+  "//": "rp2040js' own compiler settings (upstream tsconfig.json), adapted for bundling. esbuild reads useDefineForClassFields from here; the code relies on it being false.",
+  "compilerOptions": {
+    "target": "es2018",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "useDefineForClassFields": false,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["src/**/*.ts", "boady-entry.ts", "node-shim.d.ts"]
+}
