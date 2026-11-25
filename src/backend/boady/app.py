@@ -173,7 +173,7 @@ class App:
 
     def _project_info(self, p: Project) -> dict[str, Any]:
         return {
-            "id": p.id, "name": p.name, "type": p.type, "board_uid": p.board_uid,
+            "id": p.id, "name": p.name, "type": p.type, "board": p.board, "board_uid": p.board_uid,
             "last_opened": p.last_opened, "created_at": p.created_at, "dir": p.dir,
         }
 
@@ -233,6 +233,9 @@ class App:
             raise projects.ProjectError("boady_json_missing")
         if actual != p.type:
             p = self.table.update(p.id, type=actual)
+        board = projects.read_board(p.path)
+        if board != p.board:
+            p = self.table.update(p.id, board=board)
         if self.project and self.project.id == p.id and self.session:
             self.select_required = None
             return p
@@ -429,8 +432,17 @@ class App:
             # runtime check first, independent of which board the project is bound to
             await self.runtime_mismatch(p, runtime)
             return
+        kind = self.device_kind()
         if p is not None and p.board_uid in (None, uid):
-            self.project = self.table.update(p.id, board_uid=uid, mpy_version=d.mpy_version)
+            if p.board and p.board != kind:
+                # a test project only uses its emulator, a real project only real boards (D40)
+                await self.notice(f"board_kind_mismatch: {kind}", "warning")
+                return
+            changes: dict[str, Any] = {"board_uid": uid, "mpy_version": d.mpy_version}
+            if not p.board:  # the first connection fixes the board kind
+                projects.write_board(p.path, kind)
+                changes["board"] = kind
+            self.project = self.table.update(p.id, **changes)
             await self.project_ready()
             return
         if p is not None and explicit:
@@ -471,11 +483,17 @@ class App:
         if f and uid:
             write_json(f, {"uid": uid, "manifest": manifest}, mode=0o600)
 
+    def device_kind(self) -> str:
+        """Board kind of the connected device: the emulator or a real USB board."""
+        return "rp2040js" if (self.bridge.device.usb or {}).get("emulator") else "usb"
+
     def board_error(self) -> str | None:
         """Reason why the connected board must not be written to for the open project."""
         d, p = self.bridge.device, self.project
         if p is None or not d.attached:
             return None
+        if p.board and p.board != self.device_kind():
+            return f"board_kind_mismatch: the project uses {p.board}, the connected board is {self.device_kind()}."
         if not d.uid:
             return "The board has not been identified yet."
         if d.runtime != p.type:

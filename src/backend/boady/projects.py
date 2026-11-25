@@ -44,6 +44,31 @@ def write_type(root: Path, project_type: str) -> None:
     (root / "boady.json").write_text(json.dumps({"type": project_type}, indent=2) + "\n", encoding="utf-8")
 
 
+# Board kind, fixed by the first connection (D40):
+#   "usb"      — a real board over USB
+#   "rp2040js" — the emulator: Wokwi's rp2040js emulating a Raspberry Pi Pico (a test project)
+BOARD_KINDS = ("usb", "rp2040js")
+
+
+def read_board(root: Path) -> str | None:
+    try:
+        data = json.loads((root / "boady.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    b = data.get("board") if isinstance(data, dict) else None
+    return b if b in BOARD_KINDS else None
+
+
+def write_board(root: Path, kind: str) -> None:
+    """Add ``board`` to boady.json, keeping its other keys (left uncommitted: git is manual)."""
+    if kind not in BOARD_KINDS:
+        raise ValueError(f"unknown board kind: {kind}")
+    f = root / "boady.json"
+    data = json.loads(f.read_text(encoding="utf-8"))
+    data["board"] = kind
+    f.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def _render(text: str, name: str, project_type: str) -> str:
     return text.replace("{{name}}", name).replace("{{type}}", project_type).replace("{{type_label}}", TYPE_LABEL[project_type])
 

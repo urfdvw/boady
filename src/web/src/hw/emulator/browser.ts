@@ -1,5 +1,5 @@
 /**
- * Browser start-up of the testing-only emulator: one virtual Pico per runtime,
+ * Browser start-up of the emulator: one virtual Pico per test project (D40),
  * its flash (firmware + files) and UID kept in IndexedDB across reloads.
  */
 import { EmulatorLink, type PicoHost } from "./link";
@@ -136,34 +136,38 @@ export interface Saved {
   uid: Uint8Array;
 }
 
+/** Storage key of a project's virtual board. */
+const key = (projectId: string) => `project:${projectId}`;
+
 /** Exported for tests. */
-export async function load(rt: Runtime): Promise<Saved | undefined> {
+export async function load(projectId: string): Promise<Saved | undefined> {
   try {
-    return await idb<Saved | undefined>("readonly", (s) => s.get(rt));
+    return await idb<Saved | undefined>("readonly", (s) => s.get(key(projectId)));
   } catch {
     return undefined;
   }
 }
 
 /** Exported for tests. */
-export async function store(rt: Runtime, saved: Saved): Promise<void> {
+export async function store(projectId: string, saved: Saved): Promise<void> {
   try {
-    await idb("readwrite", (s) => s.put(saved, rt));
+    await idb("readwrite", (s) => s.put(saved, key(projectId)));
   } catch {
     /* storage unavailable: the emulator starts fresh next time */
   }
 }
 
 /** Forget the emulator's files (its UID is kept, so it stays bound to its project). */
-export async function resetEmulatorStorage(rt: Runtime): Promise<void> {
-  const saved = await load(rt);
-  if (saved) await store(rt, { flash: null, uid: saved.uid });
+export async function resetEmulatorStorage(projectId: string): Promise<void> {
+  const saved = await load(projectId);
+  if (saved) await store(projectId, { flash: null, uid: saved.uid });
 }
 
-export async function startEmulator(rt: Runtime): Promise<EmulatorLink> {
+/** Start the virtual board of a test project (its own files and UID). */
+export async function startEmulator(projectId: string, rt: Runtime): Promise<EmulatorLink> {
   const fw = FIRMWARE[rt];
-  const saved = (await load(rt)) ?? { flash: null, uid: randomUid() };
-  await store(rt, saved);
+  const saved = (await load(projectId)) ?? { flash: null, uid: randomUid() };
+  await store(projectId, saved);
   const res = await fetch(`./emulator/firmware/${fw.file}`);
   if (!res.ok) throw new Error(`emulator_failed: firmware download returned HTTP ${res.status}`);
   const firmware = checkFirmware(new Uint8Array(await res.arrayBuffer()), fw.file);
@@ -177,5 +181,5 @@ export async function startEmulator(rt: Runtime): Promise<EmulatorLink> {
     host.stop();
     throw e;
   }
-  return new EmulatorLink(host, { runtime: rt, firmware: fw.label }, (f) => store(rt, { flash: f, uid: saved.uid }));
+  return new EmulatorLink(host, { runtime: rt, firmware: fw.label }, (f) => store(projectId, { flash: f, uid: saved.uid }));
 }

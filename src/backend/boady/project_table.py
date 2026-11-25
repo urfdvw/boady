@@ -24,6 +24,7 @@ class Project:
     type: str
     session_id: str
     board_uid: str | None = None
+    board: str | None = None  # cache of boady.json "board": "usb" | "rp2040js"
     mpy_version: int | None = None
     created_at: float = field(default_factory=time.time)
     last_opened: float | None = None

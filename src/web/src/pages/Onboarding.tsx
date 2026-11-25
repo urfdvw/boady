@@ -73,6 +73,7 @@ export function Onboarding({ backend, onDone }: { backend: Backend; onDone?: () 
             <li key={p.id} className="card">
               <div className="card-body">
                 <b>{p.name}</b> <span className="pill">{t(`type.${p.type}` as any)}</span>
+                {p.board === "rp2040js" && <span className="pill">{t("emu.kind")}</span>}
                 <div className="muted small">
                   {p.board_uid ? t("onb.board", { uid: p.board_uid }) : t("onb.noBoard")} · {t("onb.lastOpened", { when: when(p.last_opened) })}
                 </div>

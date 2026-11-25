@@ -36,4 +36,6 @@ export interface Hardware {
   bind?(sink: HwSink): void;
   /** The backend accepted our hello (first connect or reconnect). */
   onConnected?(): void;
+  /** A new state snapshot arrived (e.g. another project was opened). */
+  onState?(): void;
 }

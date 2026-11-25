@@ -89,15 +89,17 @@ export class DeviceManager implements Hardware {
     this.drive = await msc.loadDriveHandle();
     if (this.drive) this.driveOk = await msc.hasPermission(this.drive).catch(() => false);
     if (!this.caps.serial) return;
-    navigator.serial.addEventListener("connect", async () => {
-      if (this.emulated) await this.disconnect(false); // a real board replaces the emulator
-      await this.autoConnect();
-    });
+    navigator.serial.addEventListener("connect", () => this.autoConnect());
     navigator.serial.addEventListener("disconnect", (e: Event) => {
       const port = (e as any).target as SerialPort;
       if (Object.values(this.conns).some((c) => c?.port === port)) this.disconnect(false);
     });
     await this.autoConnect();
+  }
+
+  /** A test project uses only its emulator: drop a real board that auto-connected before the project was known (D40). */
+  onState(): void {
+    if (this.sink?.state()?.project?.board === "rp2040js" && this.attached && !this.emulated) void this.disconnect(false);
   }
 
   /** Called after the backend accepted the hello: (re)announce the board. */
@@ -173,6 +175,8 @@ export class DeviceManager implements Hardware {
 
   async autoConnect(): Promise<void> {
     if (this.attached || this.connecting || !this.caps.serial) return;
+    // a test project uses only its emulator; real boards never connect alongside it (D40)
+    if (this.sink?.state()?.project?.board === "rp2040js") return;
     this.connecting = true;
     try {
       const group = choosePorts(await navigator.serial.getPorts(), this.chosen);

@@ -74,3 +74,17 @@ describe("backend client review fixes", () => {
     expect(hellos[hellos.length - 1].token).toBe("new-token");
   });
 });
+
+describe("test projects (D40)", () => {
+  it("tells the hardware layer about every new state", () => {
+    const conn = new FakeConn();
+    let states = 0;
+    const hw: Hardware = { caps: { serial: true, msc: false }, mode: "browser", handle: async () => ({}), onState: () => states++ };
+    const b = new Backend(conn, hw, "t");
+    b.start();
+    conn.onMessage({ type: "hello.ok" });
+    conn.onMessage({ type: "state", project: null });
+    conn.onMessage({ type: "state", project: null });
+    expect(states).toBe(2);
+  });
+});

@@ -85,17 +85,17 @@ describe("browser emulator failures (review 3, finding 5)", () => {
 });
 
 describe("emulator storage in IndexedDB (review 3, test gap)", () => {
-  it("keeps flash and UID per runtime; reset drops the files but keeps the UID", async () => {
+  it("keeps flash and UID per project; reset drops the files but keeps the UID", async () => {
     const uid = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
     const flash = new Uint8Array(2 * 1024 * 1024).fill(7);
-    await store("micropython", { flash, uid });
-    const back = await load("micropython");
+    await store("p1", { flash, uid });
+    const back = await load("p1");
     expect(Array.from(back!.uid)).toEqual(Array.from(uid));
     expect(back!.flash!.length).toBe(flash.length);
     expect(back!.flash![12345]).toBe(7);
-    expect(await load("circuitpython")).toBeUndefined(); // per runtime
-    await resetEmulatorStorage("micropython");
-    const reset = await load("micropython");
+    expect(await load("p2")).toBeUndefined(); // each test project has its own board
+    await resetEmulatorStorage("p1");
+    const reset = await load("p1");
     expect(reset!.flash).toBeNull();
     expect(Array.from(reset!.uid)).toEqual(Array.from(uid)); // stays bound to its project
   });
@@ -104,14 +104,14 @@ describe("emulator storage in IndexedDB (review 3, test gap)", () => {
     const w = new FakeWorker();
     const host = new WorkerHost(w);
     const uid = Uint8Array.from([9, 9, 9, 9, 9, 9, 9, 9]);
-    const link = new EmulatorLink(host, { runtime: "circuitpython", firmware: "x" }, (f) => store("circuitpython", { flash: f, uid }));
+    const link = new EmulatorLink(host, { runtime: "circuitpython", firmware: "x" }, (f) => store("p3", { flash: f, uid }));
     w.reply({ type: "ready" });
     await host.ready();
     const closing = link.close();
     const req = w.sent.find((m) => m.type === "flash");
     w.reply({ type: "flash", id: req.id, flash: new Uint8Array(2 * 1024 * 1024).fill(3) });
     await closing;
-    const saved = await load("circuitpython");
+    const saved = await load("p3");
     expect(saved!.flash![0]).toBe(3);
     expect(w.sent.some((m) => m.type === "stop")).toBe(true);
   });

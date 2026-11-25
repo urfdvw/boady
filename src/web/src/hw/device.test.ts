@@ -159,6 +159,31 @@ describe("MSC lock", () => {
   });
 });
 
+describe("test projects use only their emulator (D40)", () => {
+  it("drops a real board when the open project is a test project", async () => {
+    const { dm } = setup();
+    fakeCircuitPython(dm, { hashlib: true });
+    let closed = false;
+    (dm.conns.repl as any).close = async () => void (closed = true);
+    (dm as any).sink.state = () => ({ project: { type: "circuitpython", board: "rp2040js" }, device: {}, serial: { lock: {} } });
+    dm.onState();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(dm.attached).toBe(false);
+    expect(closed).toBe(true);
+  });
+
+  it("does not auto-connect real ports for a test project", async () => {
+    const { dm } = setup();
+    (dm as any).caps = { serial: true, msc: false };
+    (dm as any).sink.state = () => ({ project: { type: "micropython", board: "rp2040js" }, device: {}, serial: { lock: {} } });
+    let asked = false;
+    (globalThis as any).navigator.serial = { getPorts: async () => ((asked = true), []) };
+    await dm.autoConnect();
+    expect(asked).toBe(false);
+    delete (globalThis as any).navigator.serial;
+  });
+});
+
 describe("role probe", () => {
   it("scores REPL-like output", () => {
     expect(replScore("\r\nKeyboardInterrupt\r\n>>> ")).toBeGreaterThan(replScore("12,34\r\n"));

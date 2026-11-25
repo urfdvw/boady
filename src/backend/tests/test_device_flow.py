@@ -364,3 +364,52 @@ async def test_pull_selected_paths_keeps_local_edits(env, board):
     assert (src / "data.txt").read_text() == "2\n"
     assert (src / "code.py").read_text() == "fixed\n"
     assert not any(m["type"] == "permission_request" for m in ws.inbox)
+
+
+async def attach_emulator(ws):
+    await ws.send({"type": "device.attached", "usb": {"vid": None, "pid": None, "msc": None, "emulator": {"runtime": "circuitpython", "firmware": "x"}}, "ports": ["repl"]})
+
+
+async def test_first_connection_fixes_board_kind(env, board):
+    """Master 2026-11-25: a project becomes a test (emulator) project by its first connection."""
+    import json as _json
+
+    app, client = env
+    ws = await connect(client, app.token)
+    pid = (await ws.action("project.create", {"name": "t1", "type": "circuitpython"}))["result"]["project"]["id"]
+    assert app.table.get(pid).board is None
+    await attach_emulator(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    p = app.table.get(pid)
+    assert p.board == "rp2040js"
+    assert _json.loads((p.path / "boady.json").read_text()) == {"type": "circuitpython", "board": "rp2040js"}
+    st = await ws.wait(lambda m: m["type"] == "state" and m["project"] and m["project"].get("board") == "rp2040js")
+    assert st["project"]["board"] == "rp2040js"
+
+
+async def test_real_board_refused_for_a_test_project(env, board):
+    app, client = env
+    ws = await connect(client, app.token)
+    pid = (await ws.action("project.create", {"name": "t2", "type": "circuitpython"}))["result"]["project"]["id"]
+    await attach_emulator(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    await ws.send({"type": "device.detached"})
+    # same UID (fake identification), but a real USB board this time
+    app.table.update(pid, board_uid=None)
+    await attach(ws)
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("board_kind_mismatch"), timeout=10)
+    assert app.table.get(pid).board == "rp2040js"
+    r = await ws.action("device.push", {}, "p")
+    assert not r["ok"] and "board_kind_mismatch" in r["error"]
+
+
+async def test_first_real_connection_marks_usb(env, board):
+    app, client = env
+    ws = await connect(client, app.token)
+    pid = (await ws.action("project.create", {"name": "t3", "type": "circuitpython"}))["result"]["project"]["id"]
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    assert app.table.get(pid).board == "usb"

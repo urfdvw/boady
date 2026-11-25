@@ -355,26 +355,7 @@ export function DeviceTab({ backend, hw }: { backend: Backend; hw: DeviceManager
         <NoHw />
       ) : (
         <>
-          <EmulatorSection backend={backend} dm={dm} />
-          <section>
-            <div className="button-row">
-              {dm.caps.serial && (
-                <button className="btn primary" onClick={() => dm.requestBoard()}>
-                  {t("device.connect")}
-                </button>
-              )}
-              {dm.attached && !dm.emulated && st?.project?.type === "circuitpython" && !dm.conns.data && (
-                <button className="btn" onClick={() => dm.requestDataPort()}>
-                  {t("device.addData")}
-                </button>
-              )}
-              {dm.attached && (
-                <button className="btn" onClick={() => dm.disconnect(false)}>
-                  {t("device.disconnect")}
-                </button>
-              )}
-            </div>
-          </section>
+          <ConnectSection backend={backend} dm={dm} />
           {st?.project?.type === "circuitpython" && dm.caps.msc && !dm.emulated && (
             <section>
               <h3>{t("device.drive")}</h3>
@@ -406,13 +387,22 @@ export function DeviceTab({ backend, hw }: { backend: Backend; hw: DeviceManager
   );
 }
 
-// ------------------------------------------------------------------ Emulator (testing only)
-function EmulatorSection({ backend, dm }: { backend: Backend; dm: DeviceManager }) {
+// ------------------------------------------------------------------ Connect (real board or emulator, D40)
+const EMULATOR_NAME = "rp2040js · Raspberry Pi Pico";
+
+/**
+ * One entry for connecting, whatever the board is. A test project (board
+ * "rp2040js") connects its own emulator; a real project ("usb") opens the
+ * serial port chooser; a project with no board yet offers both, and the first
+ * connection fixes the kind.
+ */
+function ConnectSection({ backend, dm }: { backend: Backend; dm: DeviceManager }) {
   const { t, lang } = useI18n();
-  const type = backend.state?.project?.type;
+  const project = backend.state?.project;
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  if (!type || (dm.attached && !dm.emulated)) return null;
+  if (!project) return null;
+  const kind = project.board;
 
   const run = async (fn: () => Promise<void>, done?: string) => {
     setBusy(true);
@@ -427,33 +417,60 @@ function EmulatorSection({ backend, dm }: { backend: Backend; dm: DeviceManager 
     }
   };
   const emu = () => import("../hw/emulator/browser"); // loaded only when used
+  const connectEmulator = () => run(async () => dm.connectEmulator(await (await emu()).startEmulator(project.id, project.type)));
+  const connectUsb = () => run(() => dm.requestBoard());
 
   return (
-    <section className="card emulator">
+    <section className="card">
       <div className="card-body">
-        <h3>{t("emu.title")}</h3>
-        <p className="muted small">{t("emu.help")}</p>
-        {dm.emulated && <div className="kv"><span className="muted">{t("emu.running")}</span><span>{dm.emulated.firmware}</span></div>}
+        <div className="kv">
+          <span className="muted">{t("device.boardKind")}</span>
+          <span>{kind === "rp2040js" ? `${t("emu.kind")} (${EMULATOR_NAME})` : kind === "usb" ? t("device.kindUsb") : t("device.kindUnset")}</span>
+        </div>
+        {kind === "rp2040js" && <p className="muted small">{t("emu.help")}</p>}
+        {!kind && <p className="muted small">{t("device.kindHelp")}</p>}
+        {kind === "usb" && !dm.caps.serial && <p className="muted small">{t("device.noHw")}</p>}
         {note && <div className="notice">{note}</div>}
       </div>
       <div className="card-actions">
-        {dm.emulated ? (
-          <button className="btn" disabled={busy} onClick={() => run(() => dm.disconnect(false))}>
-            {t("emu.stop")}
+        {!dm.attached && kind === "rp2040js" && (
+          <button className="btn primary" disabled={busy} onClick={connectEmulator}>
+            {t("device.connect")}
           </button>
-        ) : (
+        )}
+        {!dm.attached && kind === "usb" && (
+          <button className="btn primary" disabled={busy || !dm.caps.serial} onClick={connectUsb}>
+            {t("device.connect")}
+          </button>
+        )}
+        {!dm.attached && !kind && (
           <>
-            <button className="btn primary" disabled={busy} onClick={() => run(async () => dm.connectEmulator(await (await emu()).startEmulator(type)))}>
-              {t("emu.start", { runtime: t(`type.${type}` as any) })}
+            <button className="btn primary" disabled={busy || !dm.caps.serial} onClick={connectUsb}>
+              {t("device.connectUsb")}
             </button>
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() => window.confirm(t("emu.confirmReset")) && run(async () => (await emu()).resetEmulatorStorage(type), t("emu.resetDone"))}
-            >
-              {t("emu.reset")}
+            <button className="btn" disabled={busy} onClick={connectEmulator}>
+              {t("device.connectEmulator")}
             </button>
           </>
+        )}
+        {dm.attached && !dm.emulated && project.type === "circuitpython" && !dm.conns.data && (
+          <button className="btn" onClick={() => dm.requestDataPort()}>
+            {t("device.addData")}
+          </button>
+        )}
+        {dm.attached && (
+          <button className="btn" disabled={busy} onClick={() => run(() => dm.disconnect(false))}>
+            {t("device.disconnect")}
+          </button>
+        )}
+        {!dm.attached && kind === "rp2040js" && (
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={() => window.confirm(t("emu.confirmReset")) && run(async () => (await emu()).resetEmulatorStorage(project.id), t("emu.resetDone"))}
+          >
+            {t("emu.reset")}
+          </button>
         )}
         {busy && <span className="spinner" />}
       </div>

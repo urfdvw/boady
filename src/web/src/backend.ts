@@ -7,6 +7,8 @@ export interface ProjectInfo {
   id: string;
   name: string;
   type: ProjectType;
+  /** Fixed by the first connection: a real USB board, or the rp2040js emulator (test project). */
+  board: "usb" | "rp2040js" | null;
   board_uid: string | null;
   last_opened: number | null;
   created_at: number;
@@ -208,6 +210,7 @@ export class Backend {
         this.state = m as BackendState;
         if (!this.state.project) this.items = [];
         this.bump();
+        this.hw.onState?.();
         break;
       case "agent_event":
         this.onAgentEvent(m);
