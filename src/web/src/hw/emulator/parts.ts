@@ -75,6 +75,56 @@ export function readParts(raw: unknown): Record<number, PinParts> {
 
 export const partsOf = (all: Record<number, PinParts>, gpio: number): PinParts => all[gpio] ?? DEFAULT_PARTS;
 
+// ---- saved per project (a viewer convenience: localStorage) ----
+
+/** Pin options and the switches that are on. */
+export interface SavedParts {
+  parts: Record<number, PinParts>;
+  on: number[];
+}
+
+/** The part of Storage used here (``window.localStorage``, or a fake in tests). */
+export interface KeyValue {
+  getItem(k: string): string | null;
+  setItem(k: string, v: string): void;
+}
+
+const partsKey = (projectId: string) => `boady.emulatorParts.${projectId}`;
+
+export function browserStorage(): KeyValue | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadParts(projectId: string | undefined, kv: KeyValue | null = browserStorage()): SavedParts {
+  if (!projectId || !kv) return { parts: {}, on: [] };
+  try {
+    const raw = JSON.parse(kv.getItem(partsKey(projectId)) || "null");
+    const parts = readParts(raw?.parts);
+    const on = Array.isArray(raw?.on) ? raw.on.filter((g: unknown) => typeof g === "number" && parts[g]?.button === "toggle") : [];
+    return { parts, on };
+  } catch {
+    return { parts: {}, on: [] };
+  }
+}
+
+export function storeParts(projectId: string | undefined, s: SavedParts, kv: KeyValue | null = browserStorage()): void {
+  if (!projectId || !kv) return;
+  try {
+    kv.setItem(partsKey(projectId), JSON.stringify(s));
+  } catch {
+    /* storage unavailable: options last until reload */
+  }
+}
+
+/** What the switches saved as on apply, as [gpio, level] (review 8: the emulator applies them at start). */
+export function savedDrives(s: SavedParts): [number, boolean][] {
+  return s.on.map((g) => [g, driveOf(partsOf(s.parts, g), true) as boolean]);
+}
+
 // ---- zoom ----
 
 export interface View {

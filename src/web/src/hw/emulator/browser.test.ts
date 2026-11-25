@@ -2,7 +2,8 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import "fake-indexeddb/auto";
-import { checkFirmware, load, resetEmulatorStorage, store, WorkerHost, type WorkerLike } from "./browser";
+import { checkFirmware, load, resetEmulatorStorage, startEmulator, store, WorkerHost, type WorkerLike } from "./browser";
+import { storeParts } from "./parts";
 import { EmulatorLink } from "./link";
 
 class FakeWorker implements WorkerLike {
@@ -132,5 +133,27 @@ describe("saving while running in the browser (review 4, finding 5)", () => {
     w.reply({ type: "flash", id: req.id, flash: new Uint8Array(2 * 1024 * 1024).fill(5) });
     for (let i = 0; i < 50 && !(await load("p9")); i++) await new Promise((r) => setTimeout(r, 10));
     expect((await load("p9"))!.flash![100]).toBe(5);
+  });
+});
+
+
+describe("saved switches (review 8, finding 5)", () => {
+  it("are wired when the emulator starts, before its program runs, without the Emulator tab", async () => {
+    const kv = new Map<string, string>();
+    const storage = { getItem: (k: string) => kv.get(k) ?? null, setItem: (k: string, v: string) => void kv.set(k, v) };
+    storeParts("sw-project", { parts: { 14: { button: "toggle", drive: "low", led: "activeHigh" }, 3: { button: "toggle", drive: "high", led: "activeHigh" } }, on: [14, 3] }, storage);
+    const w = new FakeWorker();
+    const uf2 = readFileSync(new URL("../../../public/emulator/firmware/micropython-rpi_pico-1.29.0.uf2", import.meta.url));
+    const started = startEmulator("sw-project", "micropython", {
+      fetch: async () => ({ ok: true, status: 200, arrayBuffer: async () => uf2.buffer.slice(uf2.byteOffset, uf2.byteOffset + uf2.byteLength) }),
+      worker: () => w,
+      storage,
+    });
+    for (let i = 0; i < 50 && !w.sent.some((m) => m.type === "start"); i++) await new Promise((r) => setTimeout(r, 10));
+    expect(w.sent.map((m) => m.type)).toEqual(["start", "setPin", "setPin"]); // before "ready"
+    expect(w.sent.slice(1)).toEqual([{ type: "setPin", pin: 14, value: false }, { type: "setPin", pin: 3, value: true }]);
+    w.reply({ type: "ready" });
+    const link = await started;
+    expect(link.emulated.project).toBe("sw-project");
   });
 });

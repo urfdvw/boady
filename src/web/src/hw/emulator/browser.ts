@@ -3,6 +3,7 @@
  * its flash (firmware + files) and UID kept in IndexedDB across reloads.
  */
 import { EmulatorLink, type PicoHost } from "./link";
+import { loadParts, savedDrives, type KeyValue, browserStorage } from "./parts";
 import { FLASH_SIZE, randomUid, type PinState } from "./pico";
 
 export type Runtime = "circuitpython" | "micropython";
@@ -171,18 +172,34 @@ export async function resetEmulatorStorage(projectId: string): Promise<void> {
   if (saved) await store(projectId, { flash: null, uid: saved.uid });
 }
 
+/** What startEmulator needs from the browser (replaced in tests). */
+export interface EmulatorEnv {
+  fetch(url: string): Promise<{ ok: boolean; status: number; arrayBuffer(): Promise<ArrayBuffer> }>;
+  worker(): WorkerLike;
+  storage: KeyValue | null;
+}
+
+const browserEnv = (): EmulatorEnv => ({
+  fetch: (url) => fetch(url),
+  worker: () => new Worker(new URL("./pico.worker.ts", import.meta.url), { type: "module" }),
+  storage: browserStorage(),
+});
+
 /** Start the virtual board of a test project (its own files and UID). */
-export async function startEmulator(projectId: string, rt: Runtime): Promise<EmulatorLink> {
+export async function startEmulator(projectId: string, rt: Runtime, env: EmulatorEnv = browserEnv()): Promise<EmulatorLink> {
   const fw = FIRMWARE[rt];
   const saved = (await load(projectId)) ?? { flash: null, uid: randomUid() };
   await store(projectId, saved);
-  const res = await fetch(`./emulator/firmware/${fw.file}`);
+  const res = await env.fetch(`./emulator/firmware/${fw.file}`);
   if (!res.ok) throw new Error(`emulator_failed: firmware download returned HTTP ${res.status}`);
   const firmware = checkFirmware(new Uint8Array(await res.arrayBuffer()), fw.file);
-  const worker = new Worker(new URL("./pico.worker.ts", import.meta.url), { type: "module" });
+  const worker = env.worker();
   const host = new WorkerHost(worker);
   const flash = saved.flash && saved.flash.length === FLASH_SIZE ? saved.flash : null;
   worker.postMessage({ type: "start", firmware, flash, uid: saved.uid });
+  // Switches left on in the Emulator tab are wired before the firmware runs its program,
+  // whether or not the tab is open (review 8): the board's inputs never depend on the UI.
+  for (const [g, level] of savedDrives(loadParts(projectId, env.storage))) host.setPin(g, level);
   try {
     await host.ready();
   } catch (e) {

@@ -16,13 +16,15 @@ import {
   bit,
   driveOf,
   isLit,
+  loadParts,
   partsOf,
   pinch,
-  readParts,
+  storeParts,
   zoomAt,
   type HeaderPin,
   type PinParts,
   type Point,
+  type SavedParts,
   type View,
 } from "../hw/emulator/parts";
 import { useI18n } from "../i18n";
@@ -43,34 +45,6 @@ const BTN_X = { left: -122, right: W + 122 };
 const BTN_W = 30;
 const BTN_H = 17;
 
-interface Saved {
-  parts: Record<number, PinParts>;
-  on: number[];
-}
-
-const storageKey = (projectId: string) => `boady.emulatorParts.${projectId}`;
-
-function loadSaved(projectId: string | undefined): Saved {
-  if (!projectId) return { parts: {}, on: [] };
-  try {
-    const raw = JSON.parse(window.localStorage.getItem(storageKey(projectId)) || "null");
-    const parts = readParts(raw?.parts);
-    const on = Array.isArray(raw?.on) ? raw.on.filter((g: unknown) => typeof g === "number" && parts[g]?.button === "toggle") : [];
-    return { parts, on };
-  } catch {
-    return { parts: {}, on: [] };
-  }
-}
-
-function storeSaved(projectId: string | undefined, s: Saved) {
-  if (!projectId) return;
-  try {
-    window.localStorage.setItem(storageKey(projectId), JSON.stringify(s));
-  } catch {
-    /* storage unavailable: options last until reload */
-  }
-}
-
 export function EmulatorTab({ backend, hw }: { backend: Backend; hw: DeviceManager | null }) {
   const { t } = useI18n();
   const dm = useDevice(hw);
@@ -78,7 +52,7 @@ export function EmulatorTab({ backend, hw }: { backend: Backend; hw: DeviceManag
   const subscribe = useMemo(() => (pins ? (fn: () => void) => pins.subscribe(fn) : noSubscribe), [pins]);
   const state = useSyncExternalStore(subscribe, () => pins?.pins ?? NO_PINS);
   const projectId = backend.state?.project?.id;
-  const [saved, setSaved] = useState<Saved>(() => loadSaved(projectId));
+  const [saved, setSaved] = useState<SavedParts>(() => loadParts(projectId));
   // momentary buttons held right now (a ref: pointerup can come before the next render)
   const held = useRef(new Set<number>());
   const [, rerender] = useState(0);
@@ -86,18 +60,14 @@ export function EmulatorTab({ backend, hw }: { backend: Backend; hw: DeviceManag
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 });
   const viewport = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setSaved(loadSaved(projectId)), [projectId]);
+  useEffect(() => setSaved(loadParts(projectId)), [projectId]);
 
-  const update = (next: Saved) => {
+  const update = (next: SavedParts) => {
     setSaved(next);
-    storeSaved(projectId, next);
+    storeParts(projectId, next);
   };
 
-  // switches that are on are applied again when the emulator (re)connects
-  useEffect(() => {
-    if (!pins) return;
-    for (const g of saved.on) pins.setPin(g, driveOf(partsOf(saved.parts, g), true));
-  }, [pins]); // eslint-disable-line react-hooks/exhaustive-deps
+  // switches saved as on are applied by the emulator itself when it starts (browser.ts)
 
   const active = (g: number) => held.current.has(g) || saved.on.includes(g);
 
