@@ -118,7 +118,9 @@ def _taken(d: Path, name: str) -> bool:
     """An entry ``name`` exists in ``d`` under any spelling (``readme.md`` counts for
     ``README.md``), or as a link, even a dangling one."""
     try:
-        return any(e.name.casefold() == name.casefold() for e in d.iterdir())
+        from .sync import name_key
+
+        return any(name_key(e.name) == name_key(name) for e in d.iterdir())
     except OSError:
         return True  # unreadable (or a file where a directory should be): leave it alone
 

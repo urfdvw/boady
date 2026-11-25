@@ -14,6 +14,7 @@ import base64
 import hashlib
 import json
 import os
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -106,15 +107,42 @@ def case_insensitive(d: Path) -> bool:
         return False
 
 
-def case_collisions(paths: list[str]) -> list[tuple[str, str]]:
-    """Pairs of paths (or path prefixes) that differ only in case."""
+def normalization_insensitive(d: Path) -> bool:
+    """Whether the file system holding ``d`` treats NFC and NFD spellings of a name as one
+    file (macOS APFS / HFS+, even case-sensitive volumes). Probed with a temporary file."""
+    import tempfile
+
+    try:
+        fd, name = tempfile.mkstemp(prefix=".boady-probe-\u00e9-", dir=d)
+    except OSError:
+        return False
+    os.close(fd)
+    try:
+        return os.path.exists(unicodedata.normalize("NFD", name))
+    finally:
+        try:
+            os.unlink(name)
+        except OSError:
+            pass
+
+
+def name_key(s: str, fold_case: bool = True, fold_unicode: bool = True) -> str:
+    """The spelling-independent key of a name: Unicode normalization (NFC ``é`` and NFD
+    ``e`` + accent are one name on macOS) and case (review 13)."""
+    if fold_unicode:
+        s = unicodedata.normalize("NFD", s)
+    return s.casefold() if fold_case else s
+
+
+def case_collisions(paths: list[str], fold_case: bool = True, fold_unicode: bool = True) -> list[tuple[str, str]]:
+    """Pairs of paths (or path prefixes) that differ only in case or Unicode normalization."""
     seen: dict[str, str] = {}
     out: list[tuple[str, str]] = []
     for rel in sorted(paths):
         parts = rel.split("/")
         for i in range(1, len(parts) + 1):
             spelled = "/".join(parts[:i])
-            key = spelled.casefold()
+            key = name_key(spelled, fold_case, fold_unicode)
             other = seen.setdefault(key, spelled)
             if other != spelled and (other, spelled) not in out:
                 out.append((other, spelled))
@@ -135,8 +163,9 @@ def apply_from_device(src: Path, board_files: dict[str, str]) -> dict[str, list[
         rel = rel.strip("/")
         if rel and not excluded(rel):
             board[rel] = b64
-    if case_insensitive(src):
-        clashes = case_collisions(list(board))
+    fold_case, fold_unicode = case_insensitive(src), normalization_insensitive(src)
+    if fold_case or fold_unicode:
+        clashes = case_collisions(list(board), fold_case, fold_unicode)
         if clashes:
             a, b = clashes[0]
             raise ValueError(f"case_collision: the board has both {a!r} and {b!r}; this computer's file system cannot keep both")
@@ -238,7 +267,8 @@ def canonical_rel(rel: object) -> str | None:
 
 def case_alias(src: Path, rel: str) -> str | None:
     """The on-disk spelling if ``rel`` reaches an existing entry under another
-    spelling (case-insensitive file systems: ``CODE.PY`` -> ``code.py``), else None."""
+    spelling (``CODE.PY`` -> ``code.py``, NFD ``cafe\u0301.py`` -> NFC ``caf\u00e9.py``),
+    else None. Checked on every file system: the safe side."""
     d = src
     parts = rel.split("/")
     for i, part in enumerate(parts):
@@ -249,7 +279,7 @@ def case_alias(src: Path, rel: str) -> str | None:
         if part in names:
             d = d / part
             continue
-        same = [n for n in names if n.casefold() == part.casefold()]
+        same = [n for n in names if name_key(n) == name_key(part)]
         if same:
             return "/".join(parts[:i] + [same[0]])
         return None

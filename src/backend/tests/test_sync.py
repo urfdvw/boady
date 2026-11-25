@@ -205,3 +205,35 @@ def test_full_pull_refuses_board_paths_through_mirror_links(tmp_path):
             sync.apply_from_device(src, board)
         assert (src / "a.py").read_text() == "A0" and (src / "b.py").is_symlink()  # nothing changed
         assert (src / "keep.py").exists() and not (src / "shared" / "x.py").exists()
+
+
+NFC, NFD = "café.py", "café.py"
+
+
+def test_unicode_spellings_are_one_name():
+    """Review 13, finding 2: NFC and NFD spellings of a name."""
+    assert NFC != NFD and sync.name_key(NFC) == sync.name_key(NFD)
+    assert [set(c) for c in sync.case_collisions([NFC, NFD, "x.py"])] == [{NFC, NFD}]
+    assert sync.case_collisions([NFC, "CAFÉ.PY"], fold_case=False) == []
+    assert sync.case_collisions(["A.txt", "a.txt"], fold_case=False, fold_unicode=True) == []
+
+
+def test_partial_pull_refuses_another_unicode_spelling(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / NFC).write_text("uncommitted local edit")
+    assert sync.case_alias(src, NFD) == NFC
+    with pytest.raises(ValueError, match="different spelling"):
+        sync.apply_paths(src, {NFD: b64(b"board")}, [NFD])
+    assert (src / NFC).read_text() == "uncommitted local edit"
+
+
+def test_full_pull_refuses_two_board_files_one_name_here(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    if not sync.normalization_insensitive(src):
+        pytest.skip("this file system keeps NFC and NFD names apart")
+    (src / "keep.py").write_text("k")
+    with pytest.raises(ValueError, match="case_collision"):
+        sync.apply_from_device(src, {NFC: b64(b"1"), NFD: b64(b"2")})
+    assert sorted(p.name for p in src.iterdir()) == ["keep.py"]  # nothing changed

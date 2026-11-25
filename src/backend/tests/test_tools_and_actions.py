@@ -285,3 +285,22 @@ async def test_library_tools_succeed_for_the_agent(env, fake_circup, tool_handle
     assert "install adafruit_bme280" in fake_circup.read_text()
     libs = body(await tools["list_libraries"]({}))
     assert libs[0]["name"] == "adafruit_bme280" and libs[0]["outdated"] is True
+
+
+async def test_partial_pull_with_another_unicode_spelling_is_refused_not_silent(env, board, tool_handlers):
+    """Review 13, finding 2: NFD 'cafe\u0301.py' reached the uncommitted NFC 'caf\u00e9.py'
+    without an approval card and deleted it."""
+    nfc, nfd = "caf\u00e9.py", "cafe\u0301.py"
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "uni", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    await ws.action("git.commit", {"message": "board"}, "g")
+    (app.project.path / "src" / nfc).write_text("uncommitted local edit")
+    tools = tool_handlers(app.tool_ctx)
+    res = await tools["sync_from_device"]({"paths": [nfd]})
+    assert res.get("is_error") and "different spelling" in body(res)["error"]
+    assert (app.project.path / "src" / nfc).read_text() == "uncommitted local edit"
+    assert not [m for m in ws.inbox if m.get("type") in ("hw.request", "permission_request")]
