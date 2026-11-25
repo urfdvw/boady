@@ -34,6 +34,14 @@ function identifyStopKeys(): string[] {
   return keys.map((k) => (k === "`\\r`" ? "\r" : String.fromCharCode(parseInt(k.slice(3, 5), 16))));
 }
 
+/** What the agent's system prompt writes to stop the program and reach >>> (its "Stopping the program" step). */
+function agentStopKeys(runtime: string): string {
+  const md = read(`../prompts/system/${runtime}.md`).toString();
+  const step = md.split("\n").find((l) => l.startsWith("- **Stopping the program"))!;
+  const arg = step.match(/write_repl\("([^"]*)"\)/)![1];
+  return arg.replace(/\\x([0-9a-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\r/g, "\r");
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 for (const runtime of ["micropython", "circuitpython"] as const) {
@@ -296,6 +304,25 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       await type("\x03");
       await waitFor("KeyboardInterrupt", at, 30000);
       await waitFor(">>> ", at, 30000);
+    }, 120000);
+
+    it("the agent's stop step reaches >>> from every state the user can leave (review 12)", async () => {
+      const stop = agentStopKeys(runtime);
+      expect(stop).toBe("\x03\x02");
+      const reach = async (setup: string, setupMarker: string, what: string) => {
+        let at = stream().length;
+        await dm.consoleWrite("repl", setup);
+        await waitFor(setupMarker, at, 30000);
+        at = stream().length;
+        await dm.consoleWrite("repl", stop);
+        const text = await readRepl(at, ">>> ", 3000);
+        expect(text, `${what}: ${JSON.stringify(text)}`).toContain(">>> ");
+        await sleep(300);
+      };
+      await reach("\x01", "raw REPL; CTRL-B to exit", "raw REPL");
+      await reach("\x05", "paste mode; Ctrl-C to cancel", "paste mode");
+      await reach("while True: pass\r\r", "... ", "running program");
+      await reach("\r", ">>> ", "normal REPL");
     }, 120000);
 
     it("every Serial tab key does the same on this firmware (D46)", async () => {
