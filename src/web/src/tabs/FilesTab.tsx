@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Backend, GitChange } from "../backend";
 import { CodeEditor } from "../components/CodeEditor";
 import { useI18n } from "../i18n";
+import { getOpen, setOpen, type OpenFile } from "../state/drafts";
 
 const MARK: Record<GitChange["status"], string> = { added: "A", modified: "M", deleted: "D", renamed: "R" };
 
@@ -10,12 +11,19 @@ export function FilesTab({ backend, landscape }: { backend: Backend; landscape: 
   const { t } = useI18n();
   const st = backend.state;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [path, setPath] = useState<string | null>(null);
-  const [file, setFile] = useState<{ text?: string; binary?: boolean; size?: number } | null>(null);
-  const [text, setText] = useState("");
-  const [saved, setSaved] = useState("");
+  const projectId = st?.project?.id;
+  const restored = getOpen(projectId);
+  const [path, setPath] = useState<string | null>(restored?.path ?? null);
+  const [file, setFile] = useState<OpenFile["file"] | null>(restored?.file ?? null);
+  const [text, setText] = useState(restored?.text ?? "");
+  const [saved, setSaved] = useState(restored?.saved ?? "");
   const [error, setError] = useState<string | null>(null);
   const dirty = file?.text !== undefined && text !== saved;
+
+  // keep the open file and the draft outside the component (survives tab switches)
+  useEffect(() => {
+    setOpen(projectId, path && file ? { path, file, text, saved } : null);
+  }, [projectId, path, file, text, saved]);
 
   const status = useMemo(() => {
     const m = new Map<string, GitChange["status"]>();

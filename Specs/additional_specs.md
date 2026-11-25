@@ -95,6 +95,15 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 
 **D33 — DTR/RTS confirmed against mpremote.** mpremote 1.29.0 keeps pyserial's default (DTR and RTS asserted on open) on macOS/Linux, same as boady's D23 setting; only Windows + CP210x gets a special order, which Web Serial cannot reproduce.
 
+**D34 — Fixes from the code review (2026-11-24).** Behaviour rules that changed:
+- *git options (amends D3):* options that write files or run programs (`--output`, `--output-directory`, `--upload-pack`, `--receive-pack`, `--exec`, `--ext-diff`, `--open-files-in-pager`, `--config-env`, `--template`, `--separate-git-dir`) are hard-denied for every subcommand. Read-only commands run without approval only when all their options are on a safe list; any other option asks. Option values (`--x=/path`) are path-checked like plain arguments. `git config` runs without approval only with `--get` / `--get-all` / `--list`.
+- *Pull consent (amends D9):* the mirror is fingerprinted before the board is read; if `src/` changed during the transfer, the user is asked again with the changed files before anything is overwritten.
+- *Board guard (amends D25):* the runtime check runs before the board-binding check, also when the user opens a project. Sync in either direction and agent writes to the serial ports are refused while the connected board is unidentified, runs another runtime, or is bound to a different project.
+- *Port choice (amends D22):* the port picked in Chrome's chooser is the one opened (plus the data port picked next); other granted boards are not used.
+- *Cancelled CircuitPython serial sync:* the drive is given back with its own timeout (interrupt, re-enter raw REPL, close a half-written file, `enable_usb_drive()`); if that fails the error says to press reset.
+- *Frontend disconnect:* hardware work in progress is aborted and its late replies are never sent on a newer connection.
+- *Files tab:* the open file and unsaved text are kept per project outside the tab, so switching tabs does not lose them; closing the page with unsaved edits asks first.
+
 ## Pre-check checklist (needs Master)
 
 Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)

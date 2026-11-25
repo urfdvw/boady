@@ -31,6 +31,11 @@ export class RawRepl {
     this.waiter?.();
   }
 
+  /** Use another abort signal, e.g. for cleanup after the original one was cancelled. */
+  rearm(signal: AbortSignal): void {
+    this.signal = signal;
+  }
+
   private check() {
     if (this.signal?.aborted) throw new ReplError("cancelled");
   }

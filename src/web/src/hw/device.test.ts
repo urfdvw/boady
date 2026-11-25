@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromBase64, fromUtf8, parsePyBytes, pyBytes, sha256hex, toBase64, utf8 } from "./bytes";
-import { DeviceManager, replScore } from "./device";
+import { choosePorts, DeviceManager, replScore } from "./device";
 
 /** A CircuitPython-like board behind a fake serial port, driven through DeviceManager. */
 function fakeCircuitPython(dm: DeviceManager, opts: { hashlib: boolean }) {
@@ -47,14 +47,19 @@ function fakeCircuitPython(dm: DeviceManager, opts: { hashlib: boolean }) {
           } else if (ch === "\x04") emit("soft reboot\r\ncode.py output:\r\nhello\r\n");
           continue;
         }
-        if (ch === "\x02") {
+        if (ch === "\x01") {
+          state.pending = ""; // pyexec: Ctrl-A in raw mode resets the raw REPL
+          emit("raw REPL; CTRL-B to exit\r\n>");
+        } else if (ch === "\x03") {
+          state.pending = ""; // pyexec: Ctrl-C clears the line
+        } else if (ch === "\x02") {
           state.raw = false;
           emit("\r\nAdafruit CircuitPython 9.2.1\r\n>>> ");
         } else if (ch === "\x04") {
           const [o, e] = run(state.pending);
           state.pending = "";
           emit("OK" + o + "\x04" + e + "\x04>");
-        } else if (!(ch === "\r" && state.pending === "") && ch !== "\x03") state.pending += ch;
+        } else if (!(ch === "\r" && state.pending === "")) state.pending += ch;
       }
     },
     close: async () => {},
@@ -122,6 +127,31 @@ describe("DeviceManager over the serial raw REPL (CircuitPython)", () => {
     const { dm } = setup();
     fakeCircuitPython(dm, { hashlib: true });
     await expect(dm.handle("serial.write", { port: "data", data: "x" }, new AbortController().signal)).rejects.toThrow("No data serial port");
+  });
+});
+
+describe("review fixes", () => {
+  it("gives the drive back when a serial sync is cancelled (finding 7)", async () => {
+    const { dm } = setup();
+    const { state } = fakeCircuitPython(dm, { hashlib: false });
+    const ac = new AbortController();
+    const timer = setInterval(() => state.usbDisabled && state.writing && ac.abort(), 1);
+    const big = toBase64(new Uint8Array(4000));
+    await expect(dm.handle("fs.apply", { files: { "big.bin": big }, delete: [] }, ac.signal)).rejects.toThrow("cancelled");
+    clearInterval(timer);
+    expect(state.usbDisabled).toBe(false);
+    expect(state.sent).toContain("storage.enable_usb_drive()");
+  });
+
+  it("opens only the port the user picked (finding 3)", () => {
+    const port = (vid: number) => ({ getInfo: () => ({ usbVendorId: vid, usbProductId: 1 }) });
+    const a = port(1);
+    const b = port(2);
+    const b2 = port(2);
+    expect(choosePorts([a, b], [b])).toEqual([b]);
+    expect(choosePorts([a, b, b2], [b, b2])).toEqual([b, b2]);
+    expect(choosePorts([a], [b])).toEqual([]); // picked board gone: do not fall back to another board
+    expect(choosePorts([b, a, b2], [])).toEqual([b, b2]); // no choice yet (page load)
   });
 });
 

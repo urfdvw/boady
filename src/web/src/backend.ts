@@ -21,6 +21,7 @@ export interface TreeEntry {
 
 export interface GitChange {
   path: string;
+  from?: string; // rename source
   status: "added" | "modified" | "deleted" | "renamed";
 }
 
@@ -122,6 +123,7 @@ export class Backend {
   private actions = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>();
   private nextId = 1;
   private hwAborts = new Map<string, AbortController>();
+  private epoch = 0; // bumped on every disconnect
 
   constructor(private conn: Connection, private hw: Hardware, private token: string | null) {
     conn.onOpen = () => this.hello();
@@ -129,6 +131,7 @@ export class Backend {
       if (this.status !== "replaced" && this.status !== "badtoken" && this.status !== "pairing") this.set({ status: "offline" });
       for (const [, a] of this.actions) a.reject(new Error("disconnected"));
       this.actions.clear();
+      this.abortHardware();
     };
     conn.onMessage = (m) => this.onMessage(m);
     hw.bind?.({ send: (m) => this.conn.send(m), state: () => this.state });
@@ -141,6 +144,12 @@ export class Backend {
     }
     this.set({ status: "connecting" });
     this.conn.open();
+  }
+
+  /** New pairing code from Settings: used for every later reconnect. */
+  setToken(token: string): void {
+    this.token = token;
+    saveToken(token);
   }
 
   pair(token: string): void {
@@ -189,6 +198,7 @@ export class Backend {
         this.set({ status: "badtoken" });
         break;
       case "replaced":
+        this.abortHardware();
         this.conn.close();
         this.set({ status: "replaced" });
         break;
@@ -267,17 +277,31 @@ export class Backend {
     this.bump();
   }
 
+  /**
+   * The backend fails every pending hw request when the connection drops or is
+   * replaced, so stop them here too; their late responses are never sent on a
+   * newer connection (see ``epoch``).
+   */
+  private abortHardware() {
+    this.epoch++;
+    for (const ac of this.hwAborts.values()) ac.abort();
+    this.hwAborts.clear();
+  }
+
   private async onHwRequest(m: any) {
     const ac = new AbortController();
+    const epoch = this.epoch;
     this.hwAborts.set(m.id, ac);
+    let reply: object;
     try {
       const result = await this.hw.handle(m.op, m.params, ac.signal);
-      this.conn.send({ type: "hw.response", id: m.id, ok: true, result });
+      reply = { type: "hw.response", id: m.id, ok: true, result };
     } catch (e: any) {
-      this.conn.send({ type: "hw.response", id: m.id, ok: false, error: String(e?.message || e) });
+      reply = { type: "hw.response", id: m.id, ok: false, error: String(e?.message || e) };
     } finally {
-      this.hwAborts.delete(m.id);
+      if (this.hwAborts.get(m.id) === ac) this.hwAborts.delete(m.id);
     }
+    if (epoch === this.epoch) this.conn.send(reply);
   }
 
   // --- outgoing ---

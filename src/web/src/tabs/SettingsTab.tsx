@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { saveToken, type Backend } from "../backend";
+import type { Backend } from "../backend";
 import { useI18n, type Lang } from "../i18n";
 
 export function SettingsTab({ backend, onOpenOnboarding, onLanguage }: { backend: Backend; onOpenOnboarding(): void; onLanguage(l: Lang): void }) {
@@ -28,7 +28,7 @@ export function SettingsTab({ backend, onOpenOnboarding, onLanguage }: { backend
   const resetPairing = async () => {
     if (!window.confirm(t("settings.confirmResetPairing"))) return;
     const r = await backend.action("pairing.reset");
-    saveToken(r.token);
+    backend.setToken(r.token);
     setNewCode(r.token);
   };
 

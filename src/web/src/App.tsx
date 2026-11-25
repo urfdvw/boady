@@ -85,7 +85,7 @@ export function App({ backend: b, hw }: { backend: Backend; hw: DeviceManager | 
         case "chat":
           return <ChatTab backend={backend} />;
         case "files":
-          return <FilesTab backend={backend} landscape={landscape} />;
+          return <FilesTab key={backend.state?.project?.id} backend={backend} landscape={landscape} />;
         case "version":
           return <VersionTab backend={backend} />;
         case "serial":

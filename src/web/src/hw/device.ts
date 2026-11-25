@@ -7,7 +7,7 @@
 import type { Hardware, HardwareCaps, HwSink } from "../adapters/types";
 import { fromBase64, fromUtf8, sha256hex, sleep, toBase64, utf8 } from "./bytes";
 import { hashFiles, listFiles, readFile, removeFiles, writeVerified } from "./boardFs";
-import { cpAutoreloadOff, cpAutoreloadRestore, cpFinishWrite, cpPrepareWrite, type CpWriteState } from "./cpAccess";
+import { cpAutoreloadOff, cpAutoreloadRestore, cpFinishWrite, cpPrepareWrite, cpRecover, type CpWriteState } from "./cpAccess";
 import * as msc from "./msc";
 import { PlotBuffer } from "./plot";
 import { RawRepl } from "./rawRepl";
@@ -29,6 +29,19 @@ export function replScore(text: string): number {
   return s;
 }
 
+/**
+ * Which ports to open. ``chosen`` holds the ports the user picked in this page
+ * session (board first, then its data port); only those are used, so picking
+ * board B never opens an already granted board A. Without a choice (fresh
+ * page load) the first granted port and one more port with the same VID/PID.
+ */
+export function choosePorts<P extends { getInfo(): SerialPortInfo }>(available: P[], chosen: P[]): P[] {
+  if (chosen.length) return available.includes(chosen[0]) ? chosen.filter((p) => available.includes(p)).slice(0, 2) : [];
+  if (!available.length) return [];
+  const key = (p: P) => `${p.getInfo().usbVendorId}:${p.getInfo().usbProductId}`;
+  return available.filter((p) => key(p) === key(available[0])).slice(0, 2);
+}
+
 export class DeviceManager implements Hardware {
   caps: HardwareCaps;
   mode = "browser" as const;
@@ -39,6 +52,7 @@ export class DeviceManager implements Hardware {
   driveOk = false; // permission granted for the stored handle
   busy: string | null = null;
   error: string | null = null;
+  private chosen: SerialPort[] = [];
 
   private sink: HwSink | null = null;
   private tap: RawRepl | null = null;
@@ -103,23 +117,30 @@ export class DeviceManager implements Hardware {
   /** User gesture: pick the board's port. */
   async requestBoard(): Promise<void> {
     this.error = null;
+    let port: SerialPort;
     try {
-      await navigator.serial.requestPort();
+      port = await navigator.serial.requestPort();
     } catch {
       return; // chooser cancelled
     }
+    this.chosen = [port];
     await this.disconnect(true);
     await this.autoConnect();
   }
 
   /** User gesture: grant the second CDC interface (CircuitPython data port). */
   async requestDataPort(): Promise<void> {
-    const info = this.conns.repl?.info;
+    const repl = this.conns.repl;
+    if (!repl) return;
+    const info = repl.info;
+    let port: SerialPort;
     try {
-      await navigator.serial.requestPort(info?.vid ? { filters: [{ usbVendorId: info.vid, usbProductId: info.pid }] } : undefined);
+      port = await navigator.serial.requestPort(info?.vid ? { filters: [{ usbVendorId: info.vid, usbProductId: info.pid }] } : undefined);
     } catch {
       return;
     }
+    if (port === repl.port) return;
+    this.chosen = [repl.port, port];
     await this.disconnect(true);
     await this.autoConnect();
   }
@@ -128,10 +149,8 @@ export class DeviceManager implements Hardware {
     if (this.attached || this.connecting || !this.caps.serial) return;
     this.connecting = true;
     try {
-      const ports = await navigator.serial.getPorts();
-      if (!ports.length) return;
-      const key = (p: SerialPort) => `${p.getInfo().usbVendorId}:${p.getInfo().usbProductId}`;
-      const group = ports.filter((p) => key(p) === key(ports[0])).slice(0, 2);
+      const group = choosePorts(await navigator.serial.getPorts(), this.chosen);
+      if (!group.length) return;
       const conns: PortConn[] = [];
       for (const p of group) {
         const c = new PortConn(p);
@@ -386,14 +405,21 @@ export class DeviceManager implements Hardware {
     }
     let restart = false;
     await this.withRaw(signal, async (r) => {
-      let st: CpWriteState | null = null;
+      const st: CpWriteState = { disabledUsb: false };
       try {
-        if (type === "circuitpython") st = await cpPrepareWrite(r);
+        if (type === "circuitpython") await cpPrepareWrite(r, st);
         for (const p of written) await writeVerified(r, p, fromBase64(files[p]));
         await removeFiles(r, deleted);
-      } finally {
-        if (st) await cpFinishWrite(r, st).catch(() => {});
+      } catch (e: any) {
+        try {
+          await cpRecover(r, st);
+        } catch (e2: any) {
+          this.error = `drive_not_restored: ${e2?.message || e2}`;
+          throw new Error(`${e?.message || e}; also could not give the CIRCUITPY drive back (${e2?.message || e2}) — press reset on the board.`);
+        }
+        throw e;
       }
+      await cpFinishWrite(r, st);
       restart = type === "circuitpython";
     });
     if (restart) await this.exclusive(() => this.port("repl").write(utf8("\x04"))); // soft reload runs code.py
