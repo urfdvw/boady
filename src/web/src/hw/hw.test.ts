@@ -4,7 +4,6 @@ import { listFiles } from "./boardFs";
 import { RawRepl } from "./rawRepl";
 import { parsePlotLine, PlotBuffer } from "./plot";
 import { bootOutUid, excluded, plan } from "./syncRules";
-import { Terminal } from "./terminal";
 
 /**
  * A scripted board speaking the raw REPL protocol, for checks that need exact
@@ -96,17 +95,6 @@ describe("sync rules", () => {
   it("reads the UID from boot_out.txt", () => {
     expect(bootOutUid("Adafruit CircuitPython 9.2.1 on 2024\r\nBoard ID:x\r\nUID:de6118804b2e3c2f\r\n")).toBe("DE6118804B2E3C2F");
     expect(bootOutUid("nothing")).toBeNull();
-  });
-});
-
-describe("terminal", () => {
-  it("handles CR, backspace and escapes", () => {
-    const t = new Terminal();
-    t.write("\x1b]0;🐍code.py | 9.2.1\x1b\\>>> prinx\bt(1)\r\n1\r\n>>> ");
-    t.write("abc\rX");
-    expect(t.text()).toBe(">>> print(1)\n1\nX>> abc");
-    t.write("\x1b[K");
-    expect(t.lines[t.lines.length - 1]).toBe("X");
   });
 });
 

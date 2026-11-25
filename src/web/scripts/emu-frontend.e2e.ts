@@ -100,7 +100,7 @@ it(`emulated ${type} board end to end`, async () => {
   const prompt = process.env.BOADY_E2E_PROMPT;
   if (prompt) {
     const before = backend.items.length;
-    const replBefore = dm.terms.repl.text().length;
+    const replBefore = dm.history.repl.text().length;
     backend.sendMessage(prompt);
     await until("turn start", () => backend.running, 30000);
     await until("turn end", () => {
@@ -118,7 +118,7 @@ it(`emulated ${type} board end to end`, async () => {
     expect(errors, "the turn must not end with an error").toEqual([]);
     const expectText = process.env.BOADY_E2E_EXPECT;
     if (expectText) {
-      const output = dm.terms.repl.text().slice(replBefore);
+      const output = dm.history.repl.text().slice(replBefore);
       expect(output, "board output during the turn").toContain(expectText);
       console.log(`[e2e] board printed ${JSON.stringify(expectText)}`);
     }

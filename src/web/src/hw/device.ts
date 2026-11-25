@@ -13,7 +13,7 @@ import { PlotBuffer } from "./plot";
 import { RawRepl } from "./rawRepl";
 import { PortConn, type SerialLink } from "./serial";
 import { bootOutUid, excluded, plan } from "./syncRules";
-import { Terminal } from "./terminal";
+import { SerialHistory } from "./serialHistory";
 
 export type PortName = "repl" | "data";
 
@@ -46,7 +46,8 @@ export class DeviceManager implements Hardware {
   caps: HardwareCaps;
   mode = "browser" as const;
   conns: Partial<Record<PortName, SerialLink>> = {};
-  terms: Record<PortName, Terminal> = { repl: new Terminal(), data: new Terminal() };
+  /** Raw output per port, for the xterm.js console. */
+  history: Record<PortName, SerialHistory> = { repl: new SerialHistory(), data: new SerialHistory() };
   plot = new PlotBuffer(500);
   drive: FileSystemDirectoryHandle | null = null;
   driveOk = false; // permission granted for the stored handle
@@ -233,10 +234,11 @@ export class DeviceManager implements Hardware {
       return;
     }
     this.toBackend(port, b);
-    const text = this.decoders[port].decode(b, { stream: true });
-    this.terms[port].write(text);
-    if (port === "repl") this.plot.feed(text);
-    this.bump();
+    this.history[port].push(b);
+    if (port === "repl") {
+      // only the plotter re-renders React on serial data; the console follows `history` directly
+      if (this.plot.feed(this.decoders.repl.decode(b, { stream: true }))) this.bump();
+    }
   }
 
   private toBackend(port: PortName, b: Uint8Array) {
@@ -264,8 +266,7 @@ export class DeviceManager implements Hardware {
   private marker(text: string) {
     const b = utf8(text);
     this.toBackend("repl", b);
-    this.terms.repl.write(text);
-    this.bump();
+    this.history.repl.push(b);
   }
 
   /** Serialise everything that writes to the REPL port. */
@@ -295,8 +296,7 @@ export class DeviceManager implements Hardware {
   }
 
   clearTerminal(port: PortName) {
-    this.terms[port].clear();
-    this.bump();
+    this.history[port].clear();
   }
 
   /**
@@ -308,11 +308,13 @@ export class DeviceManager implements Hardware {
     return this.exclusive(async () => {
       this.busy = "sync";
       this.marker(SYNC_START);
+      this.bump(); // console goes read-only
       try {
         return await fn();
       } finally {
         this.busy = null;
         this.marker(SYNC_END);
+        this.bump();
       }
     });
   }

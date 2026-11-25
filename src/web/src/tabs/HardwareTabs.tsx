@@ -1,4 +1,5 @@
 import { Download, Pause, Play, RefreshCw, Trash2, Upload } from "lucide-react";
+import { XtermConsole } from "../components/XtermConsole";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Backend } from "../backend";
 import type { DeviceManager, PortName } from "../hw/device";
@@ -21,15 +22,8 @@ export function SerialTab({ backend, hw }: { backend: Backend; hw: DeviceManager
   const [port, setPort] = useState<PortName>("repl");
   const [line, setLine] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const outRef = useRef<HTMLPreElement>(null);
   const hasData = !!dm?.conns.data;
   const active: PortName = port === "data" && !hasData ? "repl" : port;
-  const text = dm ? dm.terms[active].text() : "";
-
-  useEffect(() => {
-    const el = outRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [text]);
 
   if (!dm) return <div className="tab-page placeholder"><h3>{t("serial.title")}</h3><NoHw /></div>;
   if (!dm.attached) return <div className="tab-page placeholder"><h3>{t("serial.title")}</h3><p>{t("serial.needBoard")}</p></div>;
@@ -57,9 +51,7 @@ export function SerialTab({ backend, hw }: { backend: Backend; hw: DeviceManager
           ))}
         </div>
       )}
-      <pre className="terminal" ref={outRef}>
-        {text}
-      </pre>
+      <XtermConsole key={active} history={dm.history[active]} readOnly={readOnly} onInput={(d) => !readOnly && send(d)} />
       {readOnly && <div className="notice">{agentLock ? t("serial.readonly") : t("serial.syncing")}</div>}
       {err && <div className="notice error">{err}</div>}
       <div className="serial-input">

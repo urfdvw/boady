@@ -755,17 +755,13 @@ code {
   flex: none;
 }
 
-.terminal {
+.xterm-host {
   flex: 1;
   min-height: 0;
-  margin: 0;
-  padding: 8px;
-  overflow: auto;
+  padding: 6px;
   background: #0f1115;
-  color: #d7dde8;
   border-radius: 8px;
-  white-space: pre-wrap;
-  word-break: break-all;
+  overflow: hidden;
 }
 
 .serial-input {
