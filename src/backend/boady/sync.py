@@ -136,3 +136,35 @@ def encode_files(src: Path, paths: list[str]) -> dict[str, str]:
         if rel in files:
             out[rel] = base64.b64encode(files[rel].read_bytes()).decode()
     return out
+
+
+def manifest_of(files_b64: dict[str, str]) -> dict[str, str]:
+    """Hashes of board files given as base64 (same format as ``manifest``)."""
+    out: dict[str, str] = {}
+    for rel, b64 in files_b64.items():
+        rel = rel.strip("/")
+        if rel and not excluded(rel):
+            out[rel] = sha256(base64.b64decode(b64))
+    return dict(sorted(out.items()))
+
+
+def text_diffs(src: Path, board_b64: dict[str, str], paths: list[str], max_chars: int = 6000) -> dict[str, str]:
+    """Unified diffs board -> mirror for text files among ``paths`` (truncated)."""
+    import difflib
+
+    out: dict[str, str] = {}
+    budget = max_chars
+    for rel in paths:
+        if budget <= 0:
+            break
+        try:
+            board = base64.b64decode(board_b64[rel]).decode("utf-8") if rel in board_b64 else ""
+            mp = src / rel
+            mirror = mp.read_text(encoding="utf-8") if mp.is_file() and not mp.is_symlink() else ""
+        except (UnicodeDecodeError, ValueError, OSError):
+            out[rel] = "(binary)"
+            continue
+        d = "".join(difflib.unified_diff(board.splitlines(True), mirror.splitlines(True), f"board/{rel}", f"mirror/{rel}"))
+        out[rel] = d[:budget]
+        budget -= len(out[rel])
+    return out

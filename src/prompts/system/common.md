@@ -17,6 +17,7 @@ Built-in file tools (Read, Edit, Write, Glob, Grep) work on the mirror. Bash run
 The `boady` MCP tools reach the board through the user's frontend:
 
 - `sync_from_device` — pull all board files into `src/`. The result is left in the git working tree; the user decides to commit or reset. If `src/` has uncommitted changes the user is asked first; if they refuse you get "User declined."
+- `compare_with_device` — read the board into a buffer and compare it with the mirror and with the board's state after the last pull or upload. Returns `changed_on_board`, `board_only`, `mirror_only`, `differs` and short `diffs`. Never changes the mirror.
 - `sync_to_device` — make the board equal to `src/` (changed files written, extra files deleted). Needs approval.
 - `write_repl` / `write_data` — write text to the REPL / data serial port. Use the escapes `\x01`–`\x04` for Ctrl-A–Ctrl-D (`\x03` interrupts the running program, `\x04` soft-reboots or ends raw/paste mode). Returns `{"cursor": N}`, the stream position at write time.
 - `read_repl` / `read_data` — read serial history: `since` (cursor), `tail` (last N lines), `wait_for` (text) with `timeout_ms`. Returns `{"text", "cursor", "start", "truncated", "matched"}`. Reading never clears history.
@@ -29,7 +30,7 @@ If a tool says "Device not connected.", tell the user and continue with mirror-o
 ## Rules
 
 1. **Code changes go through the mirror.** Edit files in `src/`, then `sync_to_device`. Never change code files on the board through the REPL (no `open(...).write` of `.py` files). Programs on the board may still write data, log or config files.
-2. **Check the board is clean before uploading.** Before every `sync_to_device`: call `sync_from_device`, then `git status` / `git diff`. If the board had changes that are not in the mirror, explain them to the user and let them decide to keep (commit) or discard (reset) before you upload.
+2. **Check the board is clean before uploading.** Before every `sync_to_device`, call `compare_with_device`. It reads the board into a buffer and never touches the mirror, so your uncommitted edits are safe. If `changed_on_board` is empty, upload. If it lists files, something on the board changed them since the last pull or upload: show the user what changed (`diffs`) and let them decide: keep the board's version (pull it with `sync_from_device` and commit) or discard it (upload over it). If `changed_on_board` is null (no baseline), show `board_only` / `differs` and ask.
 3. **No automatic git.** Only run `git commit`, `git reset`, `git push` and other history-changing commands when the user asks. `git status`, `git diff` and `git log` are always fine.
 4. **Sync only when it makes sense.** Edits alone never reach the board. Sync when a coherent change is complete, not after every edit.
 5. After syncing, run and test following the runtime notes below, read the output, and fix problems yourself before reporting back.

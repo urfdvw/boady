@@ -260,3 +260,61 @@ async def test_src_symlink_never_reaches_outside(env, board, tmp_path):
         r = await ws.action(action, {}, action)
         assert not r["ok"] and "symbolic link" in r["error"], (action, r)
     assert (outside / "keep.txt").read_text() == "keep"
+
+
+async def test_compare_with_device_buffers_and_finds_board_changes(env, board, monkeypatch):
+    """Master 2026-11-24: the pre-upload check reads the board into a buffer, never into the mirror."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "cmp", "type": "circuitpython"})
+    await attach(ws)
+    on_board = {"code.py": b"print('old')\n", "data.txt": b"1\n"}
+    await answer_pull(ws, on_board)
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    src = app.project.path / "src"
+    assert app.get_baseline() == {"code.py": mcp_tools.sync.sha256(b"print('old')\n"), "data.txt": mcp_tools.sync.sha256(b"1\n")}
+
+    async def compare(board_now):
+        task = asyncio.create_task(mcp_tools.compare_with_device(app.tool_ctx))
+        await answer_pull(ws, board_now)
+        return await task
+
+    # 1) the agent fixed code.py in the mirror; the board is unchanged
+    (src / "code.py").write_text("print('fixed')\n")
+    r = await compare(on_board)
+    assert r["changed_on_board"] == [] and r["differs"] == ["code.py"]
+    assert (src / "code.py").read_text() == "print('fixed')\n"  # mirror untouched, no approval asked
+
+    # 2) a program on the board changed data.txt meanwhile
+    r = await compare({**on_board, "data.txt": b"2\n"})
+    assert r["changed_on_board"] == ["data.txt"]
+    d = r["diffs"]["data.txt"]
+    assert "\n-2\n" in d and "\n+1\n" in d  # board -> mirror
+    assert (src / "data.txt").read_text() == "1\n"
+
+    # 3) after an upload the baseline is the mirror
+    task = asyncio.create_task(mcp_tools.push_to_device(app.tool_ctx))
+    plan = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.plan", timeout=10)
+    await ws.send({"type": "hw.response", "id": plan["id"], "ok": True, "result": {"need": ["code.py"], "delete": []}})
+    apply = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.apply", timeout=10)
+    await ws.send({"type": "hw.response", "id": apply["id"], "ok": True, "result": {"written": ["code.py"], "deleted": []}})
+    await task
+    assert app.get_baseline()["code.py"] == mcp_tools.sync.sha256(b"print('fixed')\n")
+
+
+async def test_compare_without_baseline_says_so(env, board):
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "nb", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    app.paths.home.joinpath("sync", f"{app.project.id}.json").unlink()
+    task = asyncio.create_task(mcp_tools.compare_with_device(app.tool_ctx))
+    await answer_pull(ws, {"code.py": b"y"})
+    r = await task
+    assert r["changed_on_board"] is None and "baseline" in r["note"] and r["differs"] == ["code.py"]

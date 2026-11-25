@@ -28,6 +28,7 @@ MCP_AUTO_ALLOW = {
     "read_data",
     "write_data",
     "sync_from_device",
+    "compare_with_device",
     "install_library",
     "list_libraries",
 }

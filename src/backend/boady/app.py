@@ -74,6 +74,8 @@ class App:
         self.auth_status: dict[str, Any] = {"claude": None, "github": None}
         self.tool_ctx.on_synced = self.on_synced
         self.tool_ctx.board_error = self.board_error
+        self.tool_ctx.get_baseline = self.get_baseline
+        self.tool_ctx.set_baseline = self.set_baseline
         self.tool_ctx.project_info = lambda: (self.project.type, self.project.mpy_version) if self.project else None
         self._tasks: set[asyncio.Task] = set()
         self._identify_task: asyncio.Task | None = None
@@ -452,6 +454,22 @@ class App:
             "candidates": [self._project_info(c) for c in cands] if cands else None,
         }
         await self.send(self.select_required)
+
+    def _baseline_file(self) -> Path | None:
+        return self.paths.home / "sync" / f"{self.project.id}.json" if self.project else None
+
+    def get_baseline(self) -> dict[str, str] | None:
+        """The board's file hashes after the last pull/upload, if recorded for this board."""
+        f, uid = self._baseline_file(), self.bridge.device.uid
+        data = read_json(f, None) if f else None
+        if not data or not uid or data.get("uid") != uid:
+            return None
+        return dict(data.get("manifest") or {})
+
+    def set_baseline(self, manifest: dict[str, str]) -> None:
+        f, uid = self._baseline_file(), self.bridge.device.uid
+        if f and uid:
+            write_json(f, {"uid": uid, "manifest": manifest}, mode=0o600)
 
     def board_error(self) -> str | None:
         """Reason why the connected board must not be written to for the open project."""

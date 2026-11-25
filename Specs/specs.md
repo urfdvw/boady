@@ -65,7 +65,7 @@ Nov 21, 2026 · @River
 
 三层：静态规则（`allowed_tools` / `disallowed_tools` / `permission_mode`）、动态审批（`can_use_tool` 推给前端弹窗，等待结果）、Hooks（仅用于 PreToolUse 硬拦截与审计日志）。不设任何自动触发同步或 git 操作的 hook。
 
-- 默认放行：镜像内读写、库安装到镜像（circup、mpremote mip）、git status/diff/log、`read_repl` / `read_data`、`write_repl` / `write_data`、`sync_from_device`
+- 默认放行：镜像内读写、库安装到镜像（circup、mpremote mip）、git status/diff/log、`read_repl` / `read_data`、`write_repl` / `write_data`、`sync_from_device`、`compare_with_device`
 - 需确认：git commit/reset/push 等会改变仓库的操作、`sync_to_device`、镜像以外的任何操作
 - 代码文件只通过 `sync_to_device` 上板；REPL 写入修改板上文件的风险由系统提示约束，并由上传前的干净检查兜底（见「MCP 工具与前后端分工」）。
 
@@ -87,6 +87,7 @@ MCP 只提供抽象过的文件与串口接口：项目类型（CircuitPython / 
 | 工具 | 参数 | 返回 | 说明 |
 | --- | --- | --- | --- |
 | `sync_from_device` | 无 | 新增 / 修改 / 删除的文件列表 | 把板上全部文件拉到镜像 `src/`，结果留在 git 工作区；镜像有未提交修改时先提醒用户，用户拒绝则返回“用户拒绝” |
+| `compare_with_device` | 无 | 自上次同步以来板上改动的文件、板与镜像的差异 | 把板上文件拉到缓冲区对比，不写镜像；默认放行 |
 | `sync_to_device` | 无 | 写入 / 删除的文件列表 | 把镜像 `src/` 同步到板子；需审批 |
 | `read_repl` | `since`（游标，可选）、`tail`（最近 N 行，可选）、`wait_for`（字符串，可选）、`timeout_ms` | 文本、新游标、是否等到 `wait_for` | 读 REPL 串口历史 |
 | `write_repl` | `data`（文本，用 `\x01`–`\x04` 转义表示 Ctrl-A–D） | 写入时的游标 | 写 REPL 串口 |
@@ -102,7 +103,7 @@ MCP 只提供抽象过的文件与串口接口：项目类型（CircuitPython / 
 - 前端未连接或板子未插入时，所有工具立即返回“设备未连接”。
 - 运行、软复位、内存试跑等操作由 agent 用 `write_repl` 组合完成（如 Ctrl-C、Ctrl-D），写在 `src/prompts/` 的系统提示里。DTR/RTS 不对 agent 开放。
 - **REPL 写入会修改板上文件**：板上运行的代码（包括 agent 经 `write_repl` 执行的代码）可以写文件。系统提示要求 agent 不经 REPL 修改代码文件——代码一律改镜像再经 `sync_to_device` 上板；因此被 REPL 或板上程序改动的多为非代码文件（数据、日志、配置）。
-- **上传前确认板上干净**：agent 调用 `sync_to_device` 之前，先用 `sync_from_device` 拉取（镜像有未提交修改时会先征得用户同意）并查看 git 状态，确认板上没有未纳入镜像的改动；有则先向用户说明并由用户决定保留（commit）还是丢弃（reset），再上传。
+- **上传前确认板上干净**：agent 调用 `sync_to_device` 之前，先用 `compare_with_device` 把板上文件拉到后端的缓冲区里对比，不写镜像（镜像里 agent 尚未提交的修改不会被覆盖）。后端在每次拉取和上传后记下板上文件的哈希作为基准，对比结果列出自上次同步以来板上被改动的文件及差异；有改动则先向用户说明，由用户决定保留（用 `sync_from_device` 拉入镜像并 commit）还是丢弃（直接上传覆盖），再上传。（主人决定，2026-11-24，取代先拉取到镜像的做法。）
 - 工具参数与返回的具体 JSON 形式由实现方定，记入 `additional_specs.md`。
 
 ## 项目类型

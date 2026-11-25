@@ -50,6 +50,9 @@ class ToolContext:
     project_info: Callable[[], tuple[str, int | None] | None] = lambda: None
     # why the connected board must not be used with the open project, or None
     board_error: Callable[[], str | None] = lambda: None
+    # the board's file hashes right after the last pull / upload (baseline), or None
+    get_baseline: Callable[[], dict[str, str] | None] = lambda: None
+    set_baseline: Callable[[dict[str, str]], None] = lambda m: None
 
 
 def _ok(data: Any) -> dict[str, Any]:
@@ -111,7 +114,9 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]
         if not await ctx.confirm("pull_overwrites", {"files": changed}):
             return {"declined": True}
         before = now  # re-check: more edits may have arrived while asking
-    changes = sync.apply_from_device(src, (res or {}).get("files", {}))
+    board_files = (res or {}).get("files", {})
+    changes = sync.apply_from_device(src, board_files)
+    ctx.set_baseline(sync.manifest_of(board_files))
     if ctx.on_synced:
         await ctx.on_synced("pull", changes)
     await ctx.on_mirror_changed()
@@ -149,8 +154,45 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     for k in ("channel", "restarted", "note"):
         if k in res:
             out[k] = res[k]
+    ctx.set_baseline(sync.manifest(src))  # the board now equals the mirror
     if ctx.on_synced:
         await ctx.on_synced("push", out)
+    return out
+
+
+async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
+    """Read the board into a buffer (the mirror is not touched) and compare.
+
+    ``changed_on_board``: files that differ from the baseline (the board right
+    after the last pull or upload) — changes made on the board itself, e.g. by
+    the REPL or a running program. ``board_only`` / ``mirror_only`` / ``differs``:
+    the board against the mirror (includes the mirror's own new edits).
+    ``diffs``: short board->mirror diffs of the changed text files.
+    """
+    root = ctx.project_dir()
+    if root is None:
+        raise HardwareError("No project is open.")
+    if not ctx.bridge.connected:
+        raise HardwareError("Device not connected.")
+    _check_board(ctx)
+    src = _src(root)
+    res = await ctx.bridge.request("fs.read_all", {}, timeout=300) or {}
+    board_files = {k.strip("/"): v for k, v in res.get("files", {}).items() if k.strip("/") and not sync.excluded(k)}
+    board = sync.manifest_of(board_files)
+    mirror = sync.manifest(src)
+    baseline = ctx.get_baseline()
+    out: dict[str, Any] = {
+        "changed_on_board": None if baseline is None else sorted(
+            p for p in set(board) | set(baseline) if board.get(p) != baseline.get(p)
+        ),
+        "board_only": sorted(set(board) - set(mirror)),
+        "mirror_only": sorted(set(mirror) - set(board)),
+        "differs": sorted(p for p in set(board) & set(mirror) if board[p] != mirror[p]),
+    }
+    interesting = out["changed_on_board"] if baseline is not None else out["board_only"] + out["differs"]
+    out["diffs"] = sync.text_diffs(src, board_files, interesting)
+    if baseline is None:
+        out["note"] = "No baseline yet (no pull or upload since boady started tracking this board): changed_on_board is unknown."
     return out
 
 
@@ -241,7 +283,19 @@ def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bo
         except (libraries.LibraryError, sync.MirrorPathError) as e:
             return _err(str(e))
 
-    tools = [read_repl, write_repl, read_data, write_data, sync_from_device, sync_to_device, install_library, list_libraries]
+    @tool(
+        "compare_with_device",
+        "Read the board into a buffer and compare it with the mirror and with the board's state after the last "
+        "pull/upload. Never changes the mirror. Call before every sync_to_device.",
+        {"type": "object", "properties": {}},
+    )
+    async def compare_tool(args):
+        try:
+            return _ok(await compare_with_device(ctx))
+        except HardwareError as e:
+            return _err(str(e))
+
+    tools = [read_repl, write_repl, read_data, write_data, sync_from_device, compare_tool, sync_to_device, install_library, list_libraries]
     if only is not None:
         tools = [t for t in tools if t.name in only]
     return create_sdk_mcp_server("boady", "1.0.0", tools), [t.name for t in tools]
