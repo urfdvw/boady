@@ -320,6 +320,14 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       pins.setPin(14, null); // released: the pull-up decides again
       await until(() => bitOf(pins.pins.levels, 14) === 1, "GP14 released");
       await run(read, "V1");
+      // review 8, finding 2: the firmware reads its own output back (and can toggle it)
+      const readOut = runtime === "micropython" ? "print('O%d' % o.value())" : "print('O%d' % o.value)";
+      await run(readOut, "O1");
+      await run(runtime === "micropython" ? "o.value(not o.value())" : "o.value = not o.value");
+      await until(() => bitOf(pins.pins.levels, 15) === 0, "GP15 toggled low");
+      await run(readOut, "O0");
+      await run(runtime === "micropython" ? "o.value(not o.value())" : "o.value = not o.value");
+      await until(() => bitOf(pins.pins.levels, 15) === 1, "GP15 toggled high");
       await run(runtime === "micropython" ? "o.value(0)" : "o.value=False");
       await until(() => bitOf(pins.pins.levels, 15) === 0, "GP15 low");
       await run(runtime === "micropython" ? "led.value(0)" : "led.deinit();o.deinit();i.deinit()");

@@ -185,7 +185,10 @@ export class GPIOPin {
   }
 
   get inputValue() {
-    return applyOverride(this.effectiveRawInputValue && this.inputEnable, this.inputOverride);
+    // boady: the input buffer sees the pad, which carries the chip's own output when the
+    // output is enabled (RP2040 datasheet 2.19.1); upstream read only the outside value, so
+    // firmware reading back an output pin (p.value, p.value = not p.value) got a wrong level.
+    return applyOverride(this.padLevel && this.inputEnable, this.inputOverride);
   }
 
   get irqValue() {

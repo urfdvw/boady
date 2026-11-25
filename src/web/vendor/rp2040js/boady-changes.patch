@@ -75,7 +75,7 @@ index 0000000..e1bd1f1
 +  });
 +});
 diff --git a/src/gpio-pin.ts b/src/gpio-pin.ts
-index 76a2de9..19afbd7 100644
+index 76a2de9..5af2cae 100644
 --- a/src/gpio-pin.ts
 +++ b/src/gpio-pin.ts
 @@ -39,6 +39,12 @@ const IRQ_LEVEL_LOW = 1 << 0;
@@ -115,7 +115,7 @@ index 76a2de9..19afbd7 100644
      const { index, rp2040, functionSelect } = this;
      const bitmask = 1 << index;
      switch (functionSelect) {
-@@ -149,8 +165,27 @@ export class GPIOPin {
+@@ -149,8 +165,30 @@ export class GPIOPin {
      }
    }
  
@@ -140,11 +140,14 @@ index 76a2de9..19afbd7 100644
 +
    get inputValue() {
 -    return applyOverride(this.rawInputValue && this.inputEnable, this.inputOverride);
-+    return applyOverride(this.effectiveRawInputValue && this.inputEnable, this.inputOverride);
++    // boady: the input buffer sees the pad, which carries the chip's own output when the
++    // output is enabled (RP2040 datasheet 2.19.1); upstream read only the outside value, so
++    // firmware reading back an output pin (p.value, p.value = not p.value) got a wrong level.
++    return applyOverride(this.padLevel && this.inputEnable, this.inputOverride);
    }
  
    get irqValue() {
-@@ -172,7 +207,7 @@ export class GPIOPin {
+@@ -172,7 +210,7 @@ export class GPIOPin {
      const irqToProc = this.irqValue ? 1 << 26 : 0;
      const irqFromPad = this.rawInterrupt ? 1 << 24 : 0;
      const inToPeri = this.inputValue ? 1 << 19 : 0;
@@ -153,7 +156,7 @@ index 76a2de9..19afbd7 100644
      const oeToPad = this.outputEnable ? 1 << 13 : 0;
      const oeFromPeri = this.rawOutputEnable ? 1 << 12 : 0;
      const outToPad = this.outputValue ? 1 << 9 : 0;
-@@ -201,6 +236,27 @@ export class GPIOPin {
+@@ -201,6 +239,27 @@ export class GPIOPin {
    }
  
    setInputValue(value: boolean) {
@@ -181,7 +184,7 @@ index 76a2de9..19afbd7 100644
      this.rawInputValue = value;
      const prevIrqValue = this.irqValue;
      if (value && this.inputEnable) {
-@@ -241,7 +297,7 @@ export class GPIOPin {
+@@ -241,7 +300,7 @@ export class GPIOPin {
    }
  
    refreshInput() {
