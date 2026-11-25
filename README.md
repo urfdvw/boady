@@ -47,6 +47,7 @@ python run.py
 - **Serial**: REPL (and data) console with Ctrl-C / Ctrl-D; read-only while Claude is using the port or a sync runs.
 - **Plot**: prints like `(1.2, 3.4)` on the REPL become live curves (Mu editor convention).
 - **Library**: CircuitPython uses circup (bundle names); MicroPython uses mip (micropython-lib names, `github:org/repo` or a URL). Libraries are installed into `src/lib` and reach the board with the next sync.
+- **Emulator (testing only)**: no board at hand? Device tab → **Start emulator** runs a virtual Raspberry Pi Pico with the official MicroPython or CircuitPython firmware (matching the project type) in the browser. It behaves like a connected board (identification, sync, console, plot) but has no real pins, no CIRCUITPY drive and runs slower than a real Pico. Its files and UID stay in the browser; **Reset emulator storage** erases its files.
 - **Settings**: language (English / 中文), account status, pairing code reset, project list.
 
 Your conversation is tied to the project: closing the browser or restarting the backend resumes the same Claude session.

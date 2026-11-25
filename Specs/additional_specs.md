@@ -11,6 +11,7 @@ Technical and design decisions made during implementation (spec「交接说明�
 | Phase 2: CircuitPython | Runs on real hardware (Master, 2026-11-24, Seeed XIAO nRF52840 Sense, CircuitPython 10.2.0). Master has UI-detail complaints, to be handled in a usability pass before the APK. |
 | Phase 3: MicroPython | Implemented; automated tests pass; a real `mip` install from micropython.org into a mirror works. **Acceptance on a MicroPython board not done** — needs Master (checklist below). |
 | Usability pass | Next, before the APK (Master, 2026-11-24). |
+| Emulator (D36) | Implemented and verified on both firmwares, in Node tests, with real Claude end to end, and in headless Chrome. |
 | Phase 4–5 | Not started. |
 
 Phase 1 does not depend on any pre-check result (desktop, no hardware), so it was built first.
@@ -111,6 +112,16 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 - *Action results* go only to the window that sent the request; request ids carry a per-page prefix.
 - *MSC sync* holds the REPL lock and the busy flag from turning autoreload off to restoring it, and checks for cancellation between deletions.
 - *Files tab:* a file read answer applies only if no newer read started and the editor text did not change meanwhile.
+
+**D36 — Emulator: a virtual Raspberry Pi Pico for testing without hardware (Master, 2026-11-24).** Master asked for an in-browser stand-in board for testing only, and for the hardware tests to run on it; Master preferred an emulated Pico running official firmware over interpreters compiled to WebAssembly.
+- *Emulator:* rp2040js (Wokwi, MIT) vendored as TypeScript source in `src/web/vendor/rp2040js/` — release 1.4.2 + unmerged PR #156 (SPI-NOR flash writes) + READ_UNIQUE_ID (`0x4B`) so the board has a UID; full diff in `boady-changes.patch`. Compiled with its own tsconfig (it needs `useDefineForClassFields: false`), imported as `@vendor/rp2040js`. Two more workarounds in boady's wrapper (`src/hw/emulator/pico.ts`): QSPI_SS pad reset value `0x5a` and QSPI_SS idling high, without which CircuitPython hangs reading BOOTSEL. All listed as tech debt in CLAUDE.md.
+- *Firmware:* official, unmodified Pico UF2s — MicroPython 1.29.0, CircuitPython 10.3.2 — in `src/web/public/emulator/firmware/` with sources and SHA-256 in `SOURCE.md`; `scripts/update-emulator-firmware.mjs` lists newer versions.
+- *Integration:* the emulated Pico's USB CDC is wrapped as a `SerialLink` (the interface a Web Serial port also implements), so identification, raw REPL sync, CircuitPython write switching, console, plot and the agent tools run unchanged; the backend sees `device.attached` with `usb.emulator`. Host-side flow control (the emulated USB FIFO drops bytes when full). Never MSC, no data port. In the browser it runs in a Web Worker, its 2 MB flash and UID are kept per runtime in IndexedDB (firmware is rewritten over a saved image, keeping the filesystem). A real board plugged in replaces it. Device tab: start / stop / reset storage; chat header says "emulator". Available even without Web Serial.
+- *Speed:* about 0.35× a real Pico in Node; boot to `>>>` 0.6 s (MicroPython) / 4 s (CircuitPython); raw REPL writes ≈1.5 KB/s.
+- *Tests:* `src/web/src/hw/emulator/onEmulator.test.ts` runs both firmwares through `DeviceManager`: identification with the commands from `identify_board.md`, pull-then-sync both ways, deletion/pruning, sync markers, console lock, Ctrl-C, plot, real Traceback, MicroPython soft reset, flash persistence. Scripted fake boards remain only for fault injection. `npm run e2e:emu` drives a running backend with real Claude (verified: CircuitPython full loop; MicroPython identify + pull; browser Worker path with IndexedDB in headless Chrome).
+- *Fallback not needed:* official MicroPython WebAssembly and John Fletcher's experimental CircuitPython WebAssembly port (`johnnohj/circuitpython`, branch `browser-board`, `ports/wasm`; The CircuitPython Show ep. 47) were evaluated but not used.
+
+**D37 — Enter in `write_repl` (amends D7).** The agent sometimes writes Enter as escape text (a backslash and `r`), like the Ctrl escapes; the board then never runs the line. Seen in Master's real-board identification transcripts and reproduced on the emulator. A literal `\r` / `\n` run at the very end of `data` is now one Enter; inside `data` nothing else changes, so Python escapes in code (`exec("a\nb")`) are untouched.
 
 ## Pre-check checklist (needs Master)
 
