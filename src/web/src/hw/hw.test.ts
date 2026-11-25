@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { fromUtf8, parsePyBytes, pyBytes, pyPath, utf8 } from "./bytes";
-import { listFiles, readFile, removeFiles, writeFile } from "./boardFs";
-import { RawRepl, ExecError } from "./rawRepl";
+import { listFiles } from "./boardFs";
+import { RawRepl } from "./rawRepl";
 import { parsePlotLine, PlotBuffer } from "./plot";
 import { bootOutUid, excluded, plan } from "./syncRules";
 import { Terminal } from "./terminal";
 
 /**
- * A fake board speaking the raw REPL protocol. Each executed code block is
+ * A scripted board speaking the raw REPL protocol, for checks that need exact
+ * control over what the board answers. Real behaviour is tested on the
+ * emulated Pico (emulator/onEmulator.test.ts). Each executed code block is
  * answered by `run(code)` returning [stdout, stderr].
  */
 class FakeBoard {
@@ -62,53 +64,6 @@ describe("bytes", () => {
     expect(Array.from(parsePyBytes(lit))).toEqual(Array.from(data));
     expect(Array.from(parsePyBytes("b\"it's\\n\""))).toEqual(Array.from(utf8("it's\n")));
     expect(pyPath("/lib/ä.py")).toBe("b'/lib/\\xc3\\xa4.py'.decode()");
-  });
-});
-
-describe("raw REPL", () => {
-  it("execs code and returns stdout", async () => {
-    const { r, board } = await session((code) => [code === "print(1)" ? "1\r\n" : "", ""]);
-    expect(await r.exec("print(1)")).toBe("1\r\n");
-    expect(board.codes).toEqual(["print(1)"]);
-  });
-
-  it("raises ExecError with stderr", async () => {
-    const { r } = await session(() => ["", "Traceback...\r\nOSError: [Errno 2] ENOENT\r\n"]);
-    await expect(r.exec("open('x')")).rejects.toBeInstanceOf(ExecError);
-  });
-
-  it("lists, reads, writes and removes files", async () => {
-    const fs: Record<string, Uint8Array> = { "/code.py": utf8("print('hi')\n"), "/lib/a.mpy": Uint8Array.from([0, 1, 2]) };
-    let writing: { path: string; data: number[] } | null = null;
-    const { r, board } = await session((code) => {
-      if (code.includes("def _bw")) return [Object.entries(fs).map(([p, d]) => `F ${d.length} ${p}\r\n`).join(""), ""];
-      const open = code.match(/with open\((b'[^']*')\.decode\(\),'rb'\)/);
-      if (open) {
-        const p = fromUtf8(parsePyBytes(open[1]));
-        return [`${pyBytes(fs[p])}\r\n`, ""];
-      }
-      const w = code.match(/^f=open\((b'[^']*')\.decode\(\),'wb'\)/);
-      if (w) writing = { path: fromUtf8(parsePyBytes(w[1])), data: [] };
-      const chunk = code.match(/^w\((b'.*')\)$/s);
-      if (chunk && writing) writing.data.push(...parsePyBytes(chunk[1]));
-      if (code.startsWith("f.close()") && writing) {
-        fs[writing.path] = Uint8Array.from(writing.data);
-        writing = null;
-      }
-      if (code.includes("os.remove")) for (const m of code.matchAll(/(b'[^']*')\.decode\(\)/g)) delete fs[fromUtf8(parsePyBytes(m[1]))];
-      return ["", ""];
-    });
-    expect(await listFiles(r)).toEqual([
-      { path: "code.py", size: 12 },
-      { path: "lib/a.mpy", size: 3 },
-    ]);
-    expect(fromUtf8(await readFile(r, "code.py"))).toBe("print('hi')\n");
-    const big = new Uint8Array(700).map((_, i) => i % 256);
-    await writeFile(r, "lib/new.bin", big);
-    expect(Array.from(fs["/lib/new.bin"])).toEqual(Array.from(big));
-    expect(board.codes.some((c) => c.includes("os.mkdir"))).toBe(true);
-    await removeFiles(r, ["lib/a.mpy"]);
-    expect(fs["/lib/a.mpy"]).toBeUndefined();
   });
 });
 

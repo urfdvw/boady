@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fromBase64, fromUtf8, parsePyBytes, pyBytes, sha256hex, toBase64, utf8 } from "./bytes";
+import { fromUtf8, parsePyBytes, pyBytes, toBase64, utf8 } from "./bytes";
 import { choosePorts, DeviceManager, replScore } from "./device";
 import { FakeDir, FakeFile } from "./fakeDrive";
 
-/** A CircuitPython-like board behind a fake serial port, driven through DeviceManager. */
+/** A scripted CircuitPython-like board, for faults the emulator cannot produce on demand. */
 function fakeCircuitPython(dm: DeviceManager, opts: { hashlib: boolean }) {
   const fs: Record<string, Uint8Array> = { "/code.py": utf8("old\n"), "/boot_out.txt": utf8("UID:ABCD\n"), "/gone.py": utf8("x") };
   const state = { raw: false, pending: "", usbDisabled: false, writing: null as null | { path: string; data: number[] }, sent: "" };
@@ -79,45 +79,7 @@ function setup(type: "circuitpython" | "micropython" = "circuitpython") {
   return { dm, sent };
 }
 
-const backendText = (sent: any[]) =>
-  sent.filter((m) => m.type === "serial.data").map((m) => fromUtf8(fromBase64(m.b64))).join("");
-
-describe("DeviceManager over the serial raw REPL (CircuitPython)", () => {
-  it("pulls all files, hiding protocol bytes from the backend buffer", async () => {
-    const { dm, sent } = setup();
-    fakeCircuitPython(dm, { hashlib: false });
-    const res = await dm.handle("fs.read_all", {}, new AbortController().signal);
-    expect(Object.keys(res.files).sort()).toEqual(["boot_out.txt", "code.py", "gone.py"]);
-    expect(fromUtf8(fromBase64(res.files["code.py"]))).toBe("old\n");
-    await new Promise((r) => setTimeout(r, 60));
-    const text = backendText(sent);
-    expect(text).toContain("[boady: syncing files…]");
-    expect(text).toContain("[boady: sync finished]");
-    expect(text).not.toContain("raw REPL");
-    expect(sent.some((m) => m.type === "device.update" && m.channel === "serial")).toBe(true);
-  });
-
-  it("plans and applies a sync with write access switching and soft reload", async () => {
-    const { dm, sent } = setup();
-    const { fs, state } = fakeCircuitPython(dm, { hashlib: false });
-    const manifest = { "code.py": await sha256hex(utf8("new\n")), "boot_out.txt": await sha256hex(utf8("UID:ABCD\n")), "lib/x.py": await sha256hex(utf8("lib")) };
-    const p = await dm.handle("fs.plan", { manifest }, new AbortController().signal);
-    expect(p).toEqual({ need: ["code.py", "lib/x.py"], delete: ["gone.py"] });
-    const res = await dm.handle(
-      "fs.apply",
-      { files: { "code.py": toBase64(utf8("new\n")), "lib/x.py": toBase64(utf8("lib")) }, delete: ["gone.py"] },
-      new AbortController().signal,
-    );
-    expect(res).toMatchObject({ written: ["code.py", "lib/x.py"], deleted: ["gone.py"], channel: "serial", restarted: true });
-    expect(fromUtf8(fs["/code.py"])).toBe("new\n");
-    expect(fromUtf8(fs["/lib/x.py"])).toBe("lib");
-    expect(fs["/gone.py"]).toBeUndefined();
-    expect(state.usbDisabled).toBe(false); // drive given back
-    expect(state.sent.endsWith("\x04")).toBe(true); // soft reload after leaving raw REPL
-    await new Promise((r) => setTimeout(r, 60));
-    expect(backendText(sent)).toContain("code.py output");
-  });
-
+describe("DeviceManager with a scripted board (fault injection; real runs: emulator/onEmulator.test.ts)", () => {
   it("refuses console input while the agent holds the port", async () => {
     const { dm } = setup();
     fakeCircuitPython(dm, { hashlib: true });

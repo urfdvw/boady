@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "npm run typecheck && vite build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc -p vendor/rp2040js"
+    "typecheck": "tsc --noEmit && tsc -p vendor/rp2040js",
+    "test:fast": "vitest run --exclude 'src/hw/emulator/**'",
+    "test:emu": "vitest run src/hw/emulator"
   },
   "dependencies": {
     "@codemirror/lang-python": "6.2.1",
