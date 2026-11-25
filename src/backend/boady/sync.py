@@ -138,6 +138,22 @@ def encode_files(src: Path, paths: list[str]) -> dict[str, str]:
     return out
 
 
+def safe_mirror_file(src: Path, rel: str) -> Path | None:
+    """``src/rel`` if it is a regular file reached without any symlink (file or
+    directory) and inside ``src``; otherwise None. ``rel`` comes from the board."""
+    parts = [x for x in rel.strip("/").split("/") if x]
+    if not parts or any(x in (".", "..") for x in parts):
+        return None
+    p = src
+    for x in parts:
+        p = p / x
+        if p.is_symlink():
+            return None
+    if not p.is_file() or src.resolve() not in p.resolve().parents:
+        return None
+    return p
+
+
 def manifest_of(files_b64: dict[str, str]) -> dict[str, str]:
     """Hashes of board files given as base64 (same format as ``manifest``)."""
     out: dict[str, str] = {}
@@ -159,8 +175,8 @@ def text_diffs(src: Path, board_b64: dict[str, str], paths: list[str], max_chars
             break
         try:
             board = base64.b64decode(board_b64[rel]).decode("utf-8") if rel in board_b64 else ""
-            mp = src / rel
-            mirror = mp.read_text(encoding="utf-8") if mp.is_file() and not mp.is_symlink() else ""
+            mp = safe_mirror_file(src, rel)
+            mirror = mp.read_text(encoding="utf-8") if mp is not None else ""
         except (UnicodeDecodeError, ValueError, OSError):
             out[rel] = "(binary)"
             continue

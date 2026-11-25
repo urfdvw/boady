@@ -75,3 +75,20 @@ def test_nested_symlinks_are_not_followed_or_deleted(tmp_path):
     assert sync.mirror_files(src) == {}
     sync.apply_from_device(src, {})  # board is empty: must not delete through the links
     assert (outside / "keep.txt").read_text() == "keep"
+
+
+def test_text_diffs_never_read_through_directory_links(tmp_path):
+    """Review 3, finding 1: a board path must not reach files outside the mirror."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "config.txt").write_text("SECRET outside the project\n")
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "lib").symlink_to(outside)
+    (src / "code.py").write_text("print(1)\n")
+    board = {"lib/config.txt": b64(b"board\n"), "../outside/config.txt": b64(b"x\n"), "code.py": b64(b"print(0)\n")}
+    d = sync.text_diffs(src, board, list(board))
+    assert "SECRET" not in "".join(d.values())
+    assert "+print(1)" in d["code.py"]
+    assert sync.safe_mirror_file(src, "lib/config.txt") is None
+    assert sync.safe_mirror_file(src, "code.py") == src / "code.py"
