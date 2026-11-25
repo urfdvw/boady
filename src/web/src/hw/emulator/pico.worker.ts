@@ -9,7 +9,7 @@ self.onmessage = (e: MessageEvent) => {
   switch (m.type) {
     case "start":
       try {
-        pico = new PicoMachine({ firmware: m.firmware, flash: m.flash ?? undefined, uid: m.uid });
+        pico = new PicoMachine({ firmware: m.firmware, flash: m.flash ?? undefined, uid: m.uid, inputs: m.inputs ?? [] });
         pico.onData = (b) => self.postMessage({ type: "data", bytes: b }, [b.buffer]);
         pico.onConnected = () => self.postMessage({ type: "ready" });
         pico.onFlashChanged = () => self.postMessage({ type: "flashChanged" });

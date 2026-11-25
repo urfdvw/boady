@@ -196,10 +196,10 @@ export async function startEmulator(projectId: string, rt: Runtime, env: Emulato
   const worker = env.worker();
   const host = new WorkerHost(worker);
   const flash = saved.flash && saved.flash.length === FLASH_SIZE ? saved.flash : null;
-  worker.postMessage({ type: "start", firmware, flash, uid: saved.uid });
-  // Switches left on in the Emulator tab are wired before the firmware runs its program,
-  // whether or not the tab is open (review 8): the board's inputs never depend on the UI.
-  for (const [g, level] of savedDrives(loadParts(projectId, env.storage))) host.setPin(g, level);
+  // Switches left on in the Emulator tab are part of the start parameters: the worker applies
+  // them before the first instruction, whether or not the tab is open (reviews 8 and 9).
+  const inputs = savedDrives(loadParts(projectId, env.storage));
+  worker.postMessage({ type: "start", firmware, flash, uid: saved.uid, inputs });
   try {
     await host.ready();
   } catch (e) {

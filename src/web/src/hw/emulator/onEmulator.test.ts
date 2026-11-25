@@ -362,6 +362,35 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       }, 60000);
     }
 
+    if (runtime === "micropython") {
+      it("a switch left on is wired before main.py runs (review 9, finding 3)", async () => {
+        // read at boot, printed later: output before the USB serial port is up is lost
+        const boot = "from machine import Pin\nb14 = Pin(14, Pin.IN, Pin.PULL_UP).value()\n";
+        await dm.handle("fs.apply", { files: { "main.py": toBase64(utf8(boot)) }, delete: [] }, signal());
+        const flash = await (link as unknown as { host: InProcessHost }).host.flash();
+        const run = async (inputs?: [number, boolean][]) => {
+          const pico = new PicoMachine({ firmware: new Uint8Array(read(FIRMWARE[runtime])), flash, uid: UID, inputs });
+          let out = "";
+          const host = new InProcessHost(pico);
+          host.onData = (b) => (out += fromUtf8(b));
+          pico.start();
+          await host.ready();
+          const end = Date.now() + 30000;
+          while (!out.includes(">>> ") && Date.now() < end) {
+            pico.write(utf8("\r"));
+            await sleep(300);
+          }
+          pico.write(utf8("print('BOOT14=%d' % b14)\r"));
+          while (!/BOOT14=\d\r/.test(out) && Date.now() < end) await sleep(20);
+          pico.stop();
+          return out.match(/BOOT14=\d/)?.[0];
+        };
+        expect(await run()).toBe("BOOT14=1"); // nothing wired: the pull-up
+        expect(await run([[14, false]])).toBe("BOOT14=0"); // switch to GND on
+        await dm.handle("fs.apply", { files: {}, delete: ["main.py"] }, signal());
+      }, 120000);
+    }
+
     it("persists the filesystem in its flash image", async () => {
       await dm.handle("fs.apply", { files: { "persist.txt": toBase64(utf8("kept across restarts\n")) }, delete: [] }, signal());
       const flash = await (link as unknown as { host: InProcessHost }).host.flash();

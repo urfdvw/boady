@@ -138,7 +138,7 @@ describe("saving while running in the browser (review 4, finding 5)", () => {
 
 
 describe("saved switches (review 8, finding 5)", () => {
-  it("are wired when the emulator starts, before its program runs, without the Emulator tab", async () => {
+  it("are passed to the worker with the start parameters, without the Emulator tab", async () => {
     const kv = new Map<string, string>();
     const storage = { getItem: (k: string) => kv.get(k) ?? null, setItem: (k: string, v: string) => void kv.set(k, v) };
     storeParts("sw-project", { parts: { 14: { button: "toggle", drive: "low", led: "activeHigh" }, 3: { button: "toggle", drive: "high", led: "activeHigh" } }, on: [14, 3] }, storage);
@@ -150,8 +150,10 @@ describe("saved switches (review 8, finding 5)", () => {
       storage,
     });
     for (let i = 0; i < 50 && !w.sent.some((m) => m.type === "start"); i++) await new Promise((r) => setTimeout(r, 10));
-    expect(w.sent.map((m) => m.type)).toEqual(["start", "setPin", "setPin"]); // before "ready"
-    expect(w.sent.slice(1)).toEqual([{ type: "setPin", pin: 14, value: false }, { type: "setPin", pin: 3, value: true }]);
+    // wiring only: the switches travel with the start parameters (the firmware test in
+    // onEmulator.test.ts shows they are applied before the program runs)
+    expect(w.sent.map((m) => m.type)).toEqual(["start"]);
+    expect(w.sent[0].inputs).toEqual([[14, false], [3, true]]);
     w.reply({ type: "ready" });
     const link = await started;
     expect(link.emulated.project).toBe("sw-project");

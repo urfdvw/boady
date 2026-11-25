@@ -37,6 +37,8 @@ export interface PicoOptions {
   flash?: Uint8Array;
   /** 8-byte flash unique ID: the board UID the firmware reports. */
   uid: Uint8Array;
+  /** GPIOs driven from outside from the very first instruction (switches left on), as [gpio, level]. */
+  inputs?: [number, boolean][];
 }
 
 /** GPIOs of the RP2040 (GP0–GP29). */
@@ -120,6 +122,7 @@ export class PicoMachine {
       this.onConnected();
     };
     this.cdc.onSerialData = (v: Uint8Array) => this.onData(Uint8Array.from(v));
+    for (const [g, level] of opts.inputs ?? []) this.setPin(g, level);
   }
 
   start(): void {
