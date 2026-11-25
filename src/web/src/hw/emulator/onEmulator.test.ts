@@ -46,15 +46,22 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
         await sleep(20);
       }
     }
-    /** Wait for a regex match in the backend stream after ``from`` (the typed echo is skipped by the pattern). */
-    async function waitForRe(re: RegExp, from: number, ms = 60000): Promise<RegExpMatchArray> {
+    /** Like the read_repl tool: text since ``since``, returned as soon as ``waitFor`` appears in it. */
+    async function readRepl(since: number, waitFor: string, ms = 5000): Promise<string> {
       const end = Date.now() + ms;
       for (;;) {
-        const m = stream().slice(from).match(re);
-        if (m) return m;
-        if (Date.now() > end) throw new Error(`timeout waiting for ${re}; tail ${JSON.stringify(stream().slice(-300))}`);
-        await sleep(20);
+        const s = stream().slice(since);
+        if (s.includes(waitFor)) return s;
+        if (Date.now() > end) return s;
+        await sleep(1);
       }
+    }
+    /** wait_for stops at the first marker: it must be the executed result, not the echoed command. */
+    function stopsAtResult(text: string, prefix: string) {
+      const first = text.indexOf("BOADY_END");
+      const line = text.search(new RegExp(`(^|\\n)${prefix} `));
+      expect(line, JSON.stringify(text)).toBeGreaterThanOrEqual(0);
+      expect(first, `first BOADY_END is in the echo: ${JSON.stringify(text)}`).toBeGreaterThan(line);
     }
     const type = (s: string) => dm.handle("serial.write", { port: "repl", data: s }, new AbortController().signal);
     const signal = () => new AbortController().signal;
@@ -95,15 +102,23 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
         await type("\r");
       }
       await waitFor(">>> ", at);
+      // Same procedure as the prompt: write the line, then read_repl(since=cursor,
+      // wait_for="BOADY_END") returns the text at the moment the marker first appears.
       at = stream().length;
       await type(rt + "\r");
-      const m = await waitForRe(new RegExp(`BOADY_RT (\\w+) (\\d+\\.\\d+\\.\\d+) (\\d+) BOADY_END`), at);
-      expect(m[1]).toBe(runtime);
+      const rtText = await readRepl(at, "BOADY_END");
+      stopsAtResult(rtText, "BOADY_RT");
+      const m = rtText.match(/^BOADY_RT (\w+) (\d+\.\d+\.\d+) (\d+) BOADY_END\r?$/m);
+      expect(m, JSON.stringify(rtText)).not.toBeNull();
+      expect(m![1]).toBe(runtime);
+      await waitFor(">>> ", at + rt.length);
       at = stream().length;
-      await type((runtime === "circuitpython" ? cpUid : mpUid) + "\r");
-      const u = await waitForRe(/BOADY_UID ([0-9A-F]+) BOADY_END/, at);
-      expect(u[1]).toBe("DE6118804B2E3C2F");
-      await waitFor(">>> ", at + 1);
+      const uidCmd = runtime === "circuitpython" ? cpUid : mpUid;
+      await type(uidCmd + "\r");
+      const uidText = await readRepl(at, "BOADY_END");
+      stopsAtResult(uidText, "BOADY_UID");
+      expect(uidText).toMatch(/^BOADY_UID DE6118804B2E3C2F BOADY_END\r?$/m);
+      await waitFor(">>> ", at + uidCmd.length);
       state.device.uid = "DE6118804B2E3C2F";
     }, 60000);
 
