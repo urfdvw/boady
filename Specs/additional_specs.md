@@ -12,6 +12,8 @@ Technical and design decisions made during implementation (spec「交接说明�
 | Phase 3: MicroPython | Implemented; automated tests pass; a real `mip` install from micropython.org into a mirror works. **Acceptance on a MicroPython board not done** — needs Master (checklist below). |
 | Usability pass | Next, before the APK (Master, 2026-11-24). |
 | Emulator (D36) | Implemented and verified on both firmwares, in Node tests, with real Claude end to end, and in headless Chrome. |
+| Emulator tab (D42) | Implemented: GPIO levels and button input tested on both firmwares; tab lifecycle, switches and options tested in happy-dom; checked in headless Chrome. Pinch zoom on a real touch screen not tried yet (manual checklist items 8–9). |
+| Clone documents (D44) | Implemented and tested. |
 | Phase 4–5 | Not started. |
 
 Phase 1 does not depend on any pre-check result (desktop, no hardware), so it was built first.
