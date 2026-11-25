@@ -205,3 +205,13 @@ Use a native-USB board (e.g. Raspberry Pi Pico / Pico W) and, if available, an E
 5. Library tab: search `aioble`, install, see `src/lib/aioble/*.mpy`; remove it; install `github:org/repo` of a small package. Ask Claude to install a package (it uses `install_library`).
 6. A port without `machine.unique_id()` (rare): `/.boady_id` is created on the board and stays out of the mirror.
 7. Connecting the MicroPython board while a CircuitPython project is open: everything stops and the project page explains the mismatch.
+
+## Emulator / test project manual checklist (desktop Chrome, no hardware; D36, D40)
+
+1. Create a CircuitPython project, Device tab → "Connect emulator (test project)". The Device card shows "rp2040js · Raspberry Pi Pico"; identification finishes; `boady.json` gains `"board": "rp2040js"` (uncommitted); `boot_out.txt` and `code.py` are pulled.
+2. Serial tab: Ctrl-C, Enter at "Press any key", type `print(1+1)`; the xterm console shows `2`.
+3. Ask Claude to print a counter in `code.py`, sync and read the output. The chat shows `compare_with_device`, the sync approval, and Claude reading the counter from the REPL (it must not ask whether an LED lit up).
+4. Reload the page: the emulator does not start by itself; "Connect board" in this project starts the emulator again (no port chooser), and the synced `code.py` is still there.
+5. "Reset emulator storage", connect again: the firmware's empty filesystem is back.
+6. Open a real-board project while the emulator runs: the emulator is disconnected. Plug a real board while the test project is open: it is refused with `board_kind_mismatch`.
+7. Repeat 1–3 with a MicroPython project (soft reset with Ctrl-D runs `main.py`).
