@@ -12,6 +12,7 @@ self.onmessage = (e: MessageEvent) => {
         pico = new PicoMachine({ firmware: m.firmware, flash: m.flash ?? undefined, uid: m.uid });
         pico.onData = (b) => self.postMessage({ type: "data", bytes: b }, [b.buffer]);
         pico.onConnected = () => self.postMessage({ type: "ready" });
+        pico.onFlashChanged = () => self.postMessage({ type: "flashChanged" });
         pico.start();
       } catch (e) {
         self.postMessage({ type: "error", message: String((e as Error)?.message || e) });

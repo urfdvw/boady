@@ -47,6 +47,18 @@ export class PicoMachine {
   connected = false;
   onData: (b: Uint8Array) => void = () => {};
   onConnected: () => void = () => {};
+  /** The firmware wrote flash and has been quiet for ``quietMs``: time to save the image. */
+  onFlashChanged: () => void = () => {};
+  quietMs = 1000;
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private flashWritten() {
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => {
+      this.flashTimer = null;
+      this.onFlashChanged();
+    }, this.quietMs);
+  }
 
   constructor(opts: PicoOptions) {
     const mcu = this.sim.rp2040;
@@ -59,8 +71,20 @@ export class PicoMachine {
     // Always (re)write the firmware: a saved image keeps its filesystem (the UF2 does not cover
     // it) but gets the current firmware, e.g. after boady updates the pinned version.
     loadUf2(opts.firmware, mcu.flash);
-    const ssi = Object.values(mcu.peripherals).find((p) => (p as object).constructor.name === "RPSSI") as unknown as { uniqueId: Uint8Array };
+    const ssi = Object.values(mcu.peripherals).find((p) => (p as object).constructor.name === "RPSSI") as unknown as {
+      uniqueId: Uint8Array;
+      txBuffer: number[];
+      applyCommand(): void;
+    };
     ssi.uniqueId = Uint8Array.from(opts.uid.subarray(0, 8));
+    // Notice flash writes (page program / sector or block erase) so the image can be saved while
+    // the firmware runs: files written from the REPL or by a program must survive a page reload.
+    const apply = ssi.applyCommand.bind(ssi);
+    ssi.applyCommand = () => {
+      const op = ssi.txBuffer[0];
+      apply();
+      if (op === 0x02 || op === 0x20 || op === 0xd8) this.flashWritten();
+    };
     // Workarounds (tech debt, see CLAUDE.md): rp2040js' pad reset value lacks IE, and the flash
     // chip's pull-up on QSPI_SS is not modelled. Without these, CircuitPython hangs reading BOOTSEL.
     const ss = mcu.qspi[1];
@@ -99,6 +123,8 @@ export class PicoMachine {
   }
 
   stop(): void {
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.flashTimer = null;
     if (this.pump) clearInterval(this.pump);
     this.pump = null;
     this.sim.stop();

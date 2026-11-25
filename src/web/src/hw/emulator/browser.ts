@@ -29,6 +29,7 @@ export interface WorkerLike {
 export class WorkerHost implements PicoHost {
   onData: (b: Uint8Array) => void = () => {};
   onLost: () => void = () => {};
+  onFlashChanged: () => void = () => {};
   private readyP: Promise<void>;
   private readyRes!: () => void;
   private readyRej!: (e: Error) => void;
@@ -52,7 +53,8 @@ export class WorkerHost implements PicoHost {
       } else if (m.type === "flash") {
         this.waits.get(m.id)?.res(m.flash);
         this.waits.delete(m.id);
-      } else if (m.type === "error") this.fail(new Error(`emulator_failed: ${m.message}`));
+      } else if (m.type === "flashChanged") this.onFlashChanged();
+      else if (m.type === "error") this.fail(new Error(`emulator_failed: ${m.message}`));
     };
     w.onerror = (e) => this.fail(new Error(`emulator_failed: ${e.message || "worker error"}`));
     w.onmessageerror = () => this.fail(new Error("emulator_failed: unreadable message from the worker"));

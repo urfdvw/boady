@@ -116,3 +116,21 @@ describe("emulator storage in IndexedDB (review 3, test gap)", () => {
     expect(w.sent.some((m) => m.type === "stop")).toBe(true);
   });
 });
+
+describe("saving while running in the browser (review 4, finding 5)", () => {
+  it("a flash write reported by the worker saves the image", async () => {
+    const w = new FakeWorker();
+    const host = new WorkerHost(w);
+    const uid = Uint8Array.from([4, 4, 4, 4, 4, 4, 4, 4]);
+    new EmulatorLink(host, { runtime: "micropython", firmware: "x", project: "p9" }, (f) => store("p9", { flash: f, uid }));
+    w.reply({ type: "ready" });
+    await host.ready();
+    w.reply({ type: "flashChanged" });
+    await new Promise((r) => setTimeout(r, 0));
+    const req = w.sent.find((m) => m.type === "flash");
+    expect(req, "no flash requested after flashChanged").toBeTruthy();
+    w.reply({ type: "flash", id: req.id, flash: new Uint8Array(2 * 1024 * 1024).fill(5) });
+    for (let i = 0; i < 50 && !(await load("p9")); i++) await new Promise((r) => setTimeout(r, 10));
+    expect((await load("p9"))!.flash![100]).toBe(5);
+  });
+});

@@ -10,6 +10,8 @@ export interface PicoHost {
   onData: (b: Uint8Array) => void;
   /** The emulator died while running (e.g. the Worker crashed). */
   onLost?: () => void;
+  /** The firmware wrote flash (debounced): the image should be saved. */
+  onFlashChanged?: () => void;
   write(b: Uint8Array): void;
   /** Resolves once the firmware's USB serial port is up. */
   ready(): Promise<void>;
@@ -20,8 +22,10 @@ export interface PicoHost {
 
 export class InProcessHost implements PicoHost {
   onData: (b: Uint8Array) => void = () => {};
+  onFlashChanged: () => void = () => {};
   constructor(readonly pico: PicoMachine) {
     pico.onData = (b) => this.onData(b);
+    pico.onFlashChanged = () => this.onFlashChanged();
   }
   write(b: Uint8Array) {
     this.pico.write(b);
@@ -51,6 +55,8 @@ export class EmulatorLink implements SerialLink {
     private save: (flash: Uint8Array) => Promise<void> = async () => {},
   ) {
     host.onData = (b) => this.onData(b);
+    // save whatever the firmware writes while running (REPL, programs), not only after syncs
+    host.onFlashChanged = () => void this.checkpoint();
     host.onLost = () => {
       if (this.closed) return;
       this.closed = true;

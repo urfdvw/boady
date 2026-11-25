@@ -86,6 +86,11 @@ export class DeviceManager implements Hardware {
   }
 
   async init(): Promise<void> {
+    // best effort only (IndexedDB may not finish while the page goes away); the emulator also
+    // saves after every flash write
+    window.addEventListener("pagehide", () => {
+      void (this.conns.repl as { checkpoint?: () => Promise<void> } | undefined)?.checkpoint?.();
+    });
     this.drive = await msc.loadDriveHandle();
     if (this.drive) this.driveOk = await msc.hasPermission(this.drive).catch(() => false);
     if (!this.caps.serial) return;
