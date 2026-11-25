@@ -257,6 +257,17 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       expect(await boardListdir("/")).toContain("lib");
     }, 240000);
 
+    it("turns a file into a directory of the same name and back (review 9, finding 5)", async () => {
+      const apply = (files: Record<string, string>, del: string[]) => dm.handle("fs.apply", { files, delete: del }, signal());
+      await apply({ data: toBase64(utf8("a file")) }, []);
+      await apply({ "data/log.txt": toBase64(utf8("1")) }, ["data"]);
+      expect(Object.keys((await dm.handle("fs.read_all", {}, signal())).files)).toContain("data/log.txt");
+      await apply({ data: toBase64(utf8("a file again")) }, ["data/log.txt"]);
+      const all = (await dm.handle("fs.read_all", {}, signal())).files;
+      expect(fromUtf8(fromBase64(all["data"]))).toBe("a file again");
+      await apply({}, ["data"]);
+    }, 240000);
+
     it("keeps the console read-only while a sync runs", async () => {
       const run = dm.handle("fs.read_all", {}, signal());
       await sleep(200);

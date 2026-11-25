@@ -139,6 +139,20 @@ describe("MSC channel", () => {
   });
 });
 
+describe("file <-> directory on the drive (review 9, finding 5)", () => {
+  it("replaces a file by a directory of the same name and back", async () => {
+    const { dm } = setup();
+    fakeCircuitPython(dm, { hashlib: true });
+    const root = withDrive(dm);
+    const b64 = (t: string) => btoa(t);
+    await dm.handle("fs.apply", { files: { data: b64("a file") }, delete: [] }, new AbortController().signal);
+    await dm.handle("fs.apply", { files: { "data/log.txt": b64("1") }, delete: ["data"] }, new AbortController().signal);
+    expect(root.children.get("data")?.kind).toBe("directory");
+    await dm.handle("fs.apply", { files: { data: b64("a file again") }, delete: ["data/log.txt"] }, new AbortController().signal);
+    expect(root.children.get("data")?.kind).toBe("file");
+  });
+});
+
 describe("MSC lock", () => {
   it("keeps the console read-only for the whole MSC sync (review 2, finding 6)", async () => {
     const { dm } = setup();

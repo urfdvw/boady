@@ -470,13 +470,14 @@ export class DeviceManager implements Hardware {
       await this.syncLocked(async () => {
         const prev = await this.rawSession(signal, cpAutoreloadOff);
         try {
-          for (const p of written) {
-            if (signal.aborted) throw new Error("cancelled");
-            await msc.writeFile(this.drive!, p, fromBase64(files[p]));
-          }
+          // deletions first: a file that becomes a directory (or back) blocks its new path (review 9)
           for (const p of deleted) {
             if (signal.aborted) throw new Error("cancelled");
             await msc.removeFile(this.drive!, p);
+          }
+          for (const p of written) {
+            if (signal.aborted) throw new Error("cancelled");
+            await msc.writeFile(this.drive!, p, fromBase64(files[p]));
           }
         } finally {
           await this.rawSession(AbortSignal.timeout(20000), (r) => cpAutoreloadRestore(r, prev)).catch(() => {});
@@ -489,8 +490,8 @@ export class DeviceManager implements Hardware {
       const st: CpWriteState = { disabledUsb: false };
       try {
         if (type === "circuitpython") await cpPrepareWrite(r, st);
+        await removeFiles(r, deleted); // first: it may block a new path (file <-> directory, review 9)
         for (const p of written) await writeVerified(r, p, fromBase64(files[p]));
-        await removeFiles(r, deleted);
       } catch (e: any) {
         try {
           await cpRecover(r, st);
