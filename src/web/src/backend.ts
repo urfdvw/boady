@@ -122,6 +122,8 @@ export class Backend {
   private listeners = new Set<() => void>();
   private actions = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>();
   private nextId = 1;
+  /** Unique per page, so an answer meant for an older window can never match a request here. */
+  private idPrefix = Math.random().toString(36).slice(2, 10);
   private hwAborts = new Map<string, AbortController>();
   private epoch = 0; // bumped on every disconnect
 
@@ -306,7 +308,7 @@ export class Backend {
 
   // --- outgoing ---
   action<T = any>(action: string, params: object = {}): Promise<T> {
-    const id = `a${this.nextId++}`;
+    const id = `${this.idPrefix}-${this.nextId++}`;
     return new Promise<T>((resolve, reject) => {
       if (this.status !== "connected") {
         reject(new Error("not connected"));

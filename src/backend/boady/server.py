@@ -64,11 +64,11 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 continue
             t = str(msg.get("type", ""))
             if t.startswith(CONCURRENT):
-                task = asyncio.create_task(app.handle(msg))
+                task = asyncio.create_task(app.handle(msg, conn))
                 tasks.add(task)
                 task.add_done_callback(tasks.discard)
             else:
-                await app.handle(msg)
+                await app.handle(msg, conn)
     finally:
         await app.disconnected(conn)
     return ws

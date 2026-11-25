@@ -297,7 +297,7 @@ class App:
         return projects.parse_verdict(text)
 
     # ------------------------------------------------------------- dispatch
-    async def handle(self, msg: dict[str, Any]) -> None:
+    async def handle(self, msg: dict[str, Any], conn: Connection | None = None) -> None:
         t = msg.get("type")
         try:
             if t == "user_message":
@@ -320,7 +320,7 @@ class App:
                     self.bridge.device.channel = msg.get("channel")
                 await self.push_state()
             elif t and t.startswith("project.") or t == "action":
-                await self.on_action(msg)
+                await self.on_action(msg, conn)
             elif t == "hello":
                 await self.resync()
             else:
@@ -506,18 +506,28 @@ class App:
             self.bridge.device.channel = result["channel"]
 
     # --------------------------------------------------------------- actions
-    async def on_action(self, msg: dict[str, Any]) -> None:
+    async def reply_to(self, conn: Connection | None, msg: dict[str, Any]) -> None:
+        """Answer the connection that asked; drop the answer if it was replaced meanwhile."""
+        if conn is None:
+            await self.send(msg)
+        elif conn is self.conn:
+            try:
+                await conn.send(msg)
+            except Exception as e:
+                log.debug("reply failed: %s", e)
+
+    async def on_action(self, msg: dict[str, Any], conn: Connection | None = None) -> None:
         rid = msg.get("id")
         name = msg.get("type") if msg.get("type") != "action" else msg.get("action")
         params = msg.get("params") or {}
         try:
             result = await self.run_action(str(name), params)
-            await self.send({"type": "action.result", "id": rid, "ok": True, "result": result})
+            await self.reply_to(conn, {"type": "action.result", "id": rid, "ok": True, "result": result})
         except (projects.ProjectError, files.PathError, ProcError, ValueError, HardwareError, libraries.LibraryError, sync.MirrorPathError) as e:
-            await self.send({"type": "action.result", "id": rid, "ok": False, "error": str(e)})
+            await self.reply_to(conn, {"type": "action.result", "id": rid, "ok": False, "error": str(e)})
         except Exception as e:
             log.exception("action %s failed", name)
-            await self.send({"type": "action.result", "id": rid, "ok": False, "error": str(e)})
+            await self.reply_to(conn, {"type": "action.result", "id": rid, "ok": False, "error": str(e)})
 
     def _root(self) -> Path:
         if self.project is None:

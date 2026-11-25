@@ -251,3 +251,28 @@ async def test_pairing_reset(env):
     assert r["ok"] and r["result"]["token"] != old
     assert app.paths.token_file.read_text().strip() == r["result"]["token"]
     assert oct(app.paths.token_file.stat().st_mode & 0o777) == "0o600"
+
+
+async def test_action_result_goes_to_the_asking_window(env, monkeypatch):
+    """Review 2, finding 7: a slow action finishing after a reload is not delivered to the new window."""
+    from boady import projects
+
+    app, client = env
+    gate = asyncio.Event()
+    real = projects.create
+
+    async def slow_create(*a, **k):
+        await gate.wait()
+        return await real(*a, **k)
+
+    monkeypatch.setattr(projects, "create", slow_create)
+    ws1 = await connect(client, app.token)
+    await ws1.wait(lambda m: m["type"] == "hello.ok")
+    await ws1.send({"type": "action", "id": "a1", "action": "project.create", "params": {"name": "slow", "type": "circuitpython"}})
+    await asyncio.sleep(0.05)
+    ws2 = await connect(client, app.token)  # page reloaded: replaces ws1
+    await ws2.wait(lambda m: m["type"] == "hello.ok")
+    gate.set()
+    await ws2.wait(lambda m: m["type"] == "state" and m["project"] is not None, timeout=10)
+    with pytest.raises(asyncio.TimeoutError):
+        await ws2.wait(lambda m: m.get("type") == "action.result", timeout=1)

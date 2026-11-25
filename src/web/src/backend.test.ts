@@ -56,6 +56,15 @@ describe("backend client review fixes", () => {
     expect(signals[0].aborted).toBe(true);
   });
 
+  it("action ids differ between page loads (review 2, finding 7)", () => {
+    const a = setup();
+    const b = setup();
+    a.b.action("state.refresh");
+    b.b.action("state.refresh");
+    const id = (s: ReturnType<typeof setup>) => s.conn.sent.find((m) => m.type === "action").id;
+    expect(id(a)).not.toBe(id(b));
+  });
+
   it("uses a reset pairing code on the next reconnect (finding 10)", () => {
     const { b, conn } = setup();
     b.setToken("new-token");
