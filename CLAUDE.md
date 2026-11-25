@@ -45,7 +45,7 @@ python run.py -v                                     # http://127.0.0.1:8765/#to
 Web tests: `npm test` runs everything (~1.5 min, includes the emulated Pico); `npm run test:fast` skips the emulator; `npm run test:emu` runs only the emulator tests. `npm run typecheck` also checks the vendored rp2040js with its own settings.
 
 End to end without hardware, with real Claude: start a backend, then in `src/web`
-`BOADY_E2E_TYPE=circuitpython npm run e2e:emu` (or `micropython`; add `BOADY_E2E_PROMPT="..."` for a chat turn; `BOADY_URL` / `BOADY_TOKEN` for a non-default backend). It uses or creates the project `e2e-<type>`.
+`BOADY_E2E_TYPE=circuitpython npm run e2e:emu` (or `micropython`; add `BOADY_E2E_PROMPT="..."` for a chat turn and `BOADY_E2E_EXPECT="..."` for text the board must print; approvals are denied unless listed in `BOADY_E2E_APPROVE`, e.g. `mcp__boady__sync_to_device` or `all`; `BOADY_URL` / `BOADY_TOKEN` for a non-default backend). It uses or creates the project `e2e-<type>`, and fails if identification, the pull on connect, the turn or the expected output fails.
 
 During frontend work `npm run dev` in `src/web` proxies `/ws` to a backend on port 8765.
 
