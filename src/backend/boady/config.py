@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROMPTS_DIR = REPO_ROOT / "src" / "prompts"
+SHARED_DIR = REPO_ROOT / "src" / "shared"  # data read by both backend and frontend
 SKELETON_DIR = Path(__file__).resolve().parent / "skeleton"
 WEB_DIST_DIR = REPO_ROOT / "dist" / "web"
 

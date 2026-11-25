@@ -11,27 +11,27 @@ deleting files on the board is done by the frontend through hw requests:
 from __future__ import annotations
 
 import base64
-import fnmatch
 import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Any
 
-# Never synced in either direction (OS junk on USB drives + MicroPython ID file)
-EXCLUDE_NAMES = {".DS_Store", ".Trashes", ".fseventsd", ".Spotlight-V100", "System Volume Information", "Thumbs.db"}
-EXCLUDE_PATTERNS = ["._*"]
-EXCLUDE_ROOT_FILES = {".boady_id"}
+from .config import SHARED_DIR
+
+# Never synced in either direction (OS junk on USB drives + MicroPython ID file).
+# One list for backend and frontend: src/shared/sync_exclude.json (D47).
+_EXCLUDE = json.loads((SHARED_DIR / "sync_exclude.json").read_text(encoding="utf-8"))
+EXCLUDE_NAMES = frozenset(_EXCLUDE["names"])
+EXCLUDE_PREFIXES = tuple(_EXCLUDE["prefixes"])
+EXCLUDE_ROOT_FILES = frozenset(_EXCLUDE["root_files"])
 
 
 def excluded(rel: str) -> bool:
     rel = rel.strip("/")
-    parts = rel.split("/")
     if rel in EXCLUDE_ROOT_FILES:
         return True
-    for part in parts:
-        if part in EXCLUDE_NAMES or any(fnmatch.fnmatchcase(part, pat) for pat in EXCLUDE_PATTERNS):
-            return True
-    return False
+    return any(part in EXCLUDE_NAMES or part.startswith(EXCLUDE_PREFIXES) for part in rel.split("/"))
 
 
 def sha256(data: bytes) -> str:

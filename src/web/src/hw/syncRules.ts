@@ -1,10 +1,12 @@
-/** Files never synced in either direction (mirrors backend sync.py). */
-const EXCLUDE_NAMES = new Set([".DS_Store", ".Trashes", ".fseventsd", ".Spotlight-V100", "System Volume Information", "Thumbs.db"]);
+import EXCLUDE from "../../../shared/sync_exclude.json";
+
+/** Files never synced in either direction; one list with the backend (src/shared, D47). */
+const EXCLUDE_NAMES = new Set(EXCLUDE.names);
 
 export function excluded(path: string): boolean {
   const p = path.replace(/^\/+|\/+$/g, "");
-  if (p === ".boady_id") return true;
-  return p.split("/").some((part) => EXCLUDE_NAMES.has(part) || part.startsWith("._"));
+  if (EXCLUDE.root_files.includes(p)) return true;
+  return p.split("/").some((part) => EXCLUDE_NAMES.has(part) || EXCLUDE.prefixes.some((x) => part.startsWith(x)));
 }
 
 /** Given the mirror manifest and board hashes, what to write and delete. */

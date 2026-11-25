@@ -1,0 +1,20 @@
+{
+  "_comment": "Never synced in either direction: OS junk on USB drives, and the MicroPython ID file. Read by the backend (boady/sync.py) and the frontend (src/hw/syncRules.ts); a path is excluded if any of its parts matches. See Specs/additional_specs.md D9, D47.",
+  "names": [
+    ".DS_Store",
+    ".Trashes",
+    ".fseventsd",
+    ".Spotlight-V100",
+    ".TemporaryItems",
+    ".metadata_never_index",
+    ".metadata_never_index_unless_rootfs",
+    ".metadata_direct_scope_only",
+    "System Volume Information",
+    "$RECYCLE.BIN",
+    "Thumbs.db",
+    "desktop.ini",
+    "LOST.DIR"
+  ],
+  "prefixes": ["._", ".Trash-"],
+  "root_files": [".boady_id"]
+}

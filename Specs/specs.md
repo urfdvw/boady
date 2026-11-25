@@ -329,7 +329,7 @@ REPL 串口的读写两种类型完全相同；唯一差别是数据串口通常
 
 **同步范围**：不设任何过滤规则，`src/` 与板子根目录的全部文件在两个方向上都同步（包括 `boot_out.txt` 与 `lib/`）。只有两类例外：
 
-- Windows 与 macOS 在 U 盘上生成的系统文件（如 `.DS_Store`、`._*`、`.Trashes`、`.fseventsd`、`.Spotlight-V100`、`System Volume Information`、`Thumbs.db`）不同步。
+- 各系统在 U 盘上生成的系统文件双向都不同步（拉取不写入镜像、上传不发送，也不删除板上的）：macOS 的 `.DS_Store`、`._*`、`.Trashes`、`.fseventsd`、`.Spotlight-V100`、`.TemporaryItems`、`.metadata_never_index` 一类；Linux 回收站 `.Trash-<uid>`（如 `.Trash-1000`）；Windows 的 `System Volume Information`、`$RECYCLE.BIN`、`Thumbs.db`、`desktop.ini`；Android 的 `LOST.DIR`。完整列表只有一份（`src/shared/sync_exclude.json`），前后端共用。
 - MicroPython 板子的 ID 文件（`/.boady_id`）不同步：它代表物理板子，如果随项目进入仓库，把项目同步到另一块板子时会把身份一起复制。
 
 ## 设备连接

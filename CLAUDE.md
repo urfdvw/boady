@@ -28,6 +28,7 @@ src/backend/boady/      Python shell: aiohttp WebSocket server, Agent SDK sessio
 src/backend/tests/      pytest suite
 src/web/                React frontend (Vite + TypeScript); src/web/src/hw/ = Web Serial, raw REPL, MSC, sync
 src/prompts/            ALL prompt text (.md): system prompts, project CLAUDE.md templates, one-shot tasks
+src/shared/             data read by both backend and frontend (sync_exclude.json: files never synced)
 src/android/            APK shell (phase 5)
 dist/web/               built frontend — committed; it is the release
 ```

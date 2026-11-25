@@ -16,5 +16,7 @@ export default defineConfig({
   },
   server: {
     proxy: { "/ws": { target: "ws://127.0.0.1:8765", ws: true } },
+    // src/shared holds data read by both backend and frontend (sync_exclude.json)
+    fs: { allow: [".", "../shared"] },
   },
 });

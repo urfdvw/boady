@@ -1,0 +1,12 @@
+{
+  "_comment": "Test cases for sync_exclude.json, run by both the backend and the frontend tests so the two rules stay identical.",
+  "excluded": [
+    ".DS_Store", "lib/._foo.py", ".Trashes", "System Volume Information/x", ".boady_id", ".fseventsd/a",
+    ".Trash-1000", ".Trash-1000/files/old.py", ".Trash-0/info/x.trashinfo",
+    ".metadata_never_index", ".metadata_never_index_unless_rootfs", ".metadata_direct_scope_only",
+    ".TemporaryItems/folders.501/x", "$RECYCLE.BIN/desktop.ini", "desktop.ini", "Thumbs.db", "LOST.DIR/1234"
+  ],
+  "kept": [
+    "code.py", "lib/adafruit_x.mpy", "boot_out.txt", "sub/.boady_id", ".Trash", "Trash-1000/x.py", "metadata_never_index.py", "lib/trash.py"
+  ]
+}

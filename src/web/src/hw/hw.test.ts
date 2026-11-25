@@ -3,6 +3,7 @@ import { fromUtf8, parsePyBytes, pyBytes, pyPath, utf8 } from "./bytes";
 import { listFiles } from "./boardFs";
 import { RawRepl } from "./rawRepl";
 import { parsePlotLine, PlotBuffer } from "./plot";
+import CASES from "../../../shared/sync_exclude_cases.json";
 import { bootOutUid, excluded, plan } from "./syncRules";
 
 /**
@@ -80,11 +81,14 @@ describe("list skip", () => {
 });
 
 describe("sync rules", () => {
-  it("excludes OS junk and the ID file", () => {
-    expect(excluded(".DS_Store")).toBe(true);
-    expect(excluded("lib/._x.py")).toBe(true);
-    expect(excluded(".boady_id")).toBe(true);
-    expect(excluded("code.py")).toBe(false);
+  it("excludes OS junk and the ID file: the same cases as the backend (D47)", () => {
+    for (const p of CASES.excluded) expect(excluded(p), p).toBe(true);
+    for (const p of CASES.kept) expect(excluded(p), p).toBe(false);
+  });
+
+  it("never plans to write or delete junk (Master: .Trash-1000, .metadata_never_index)", () => {
+    const p = plan({ "code.py": "a" }, { "code.py": "b", ".Trash-1000/files/x.py": "c", ".metadata_never_index": "d", "old.py": "e" });
+    expect(p).toEqual({ need: ["code.py"], delete: ["old.py"] });
   });
 
   it("plans writes and deletions", () => {

@@ -9,10 +9,34 @@ def b64(s: bytes) -> str:
 
 
 def test_excluded():
-    for p in [".DS_Store", "lib/._foo.py", ".Trashes", "System Volume Information/x", ".boady_id", ".fseventsd/a"]:
+    """Same cases as the frontend (src/shared/sync_exclude_cases.json, D47)."""
+    import json
+
+    from boady.config import SHARED_DIR
+
+    cases = json.loads((SHARED_DIR / "sync_exclude_cases.json").read_text())
+    for p in cases["excluded"]:
         assert sync.excluded(p), p
-    for p in ["code.py", "lib/adafruit_x.mpy", "boot_out.txt", "sub/.boady_id"]:
+    for p in cases["kept"]:
         assert not sync.excluded(p), p
+
+
+def test_junk_never_crosses_in_either_direction(tmp_path):
+    """Master 2026-11-25: .Trash-1000 and .metadata_never_index are system junk."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / ".Trash-1000" / "files").mkdir(parents=True)
+    (src / ".Trash-1000" / "files" / "old.py").write_text("x")
+    (src / ".metadata_never_index").write_text("")
+    (src / "code.py").write_text("print(1)")
+    # upload: the mirror's junk is not part of what is sent
+    assert set(sync.manifest(src)) == {"code.py"} and set(sync.snapshot(src)) == {"code.py"}
+    # pull: the board's junk is not written, and the mirror's junk is not deleted either
+    board = {"code.py": b64(b"print(2)"), ".Trash-1000/files/x.py": b64(b"x"), ".metadata_never_index": b64(b"")}
+    res = sync.apply_from_device(src, board)
+    assert res == {"added": [], "modified": ["code.py"], "deleted": []}
+    assert not (src / ".Trash-1000" / "files" / "x.py").exists()
+    assert (src / ".Trash-1000" / "files" / "old.py").exists()
 
 
 def test_apply_from_device(tmp_path):
