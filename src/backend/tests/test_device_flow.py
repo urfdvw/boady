@@ -19,8 +19,10 @@ def test_parse():
     assert identify.parse("BOADY_ID uid=abcd1234 runtime=micropython version=1.24.0 mpy=none")["mpy_version"] is None
     with pytest.raises(identify.IdentifyError):
         identify.parse("BOADY_ID error=no_prompt")
-    with pytest.raises(identify.IdentifyError):
-        identify.parse("nothing here")
+    with pytest.raises(identify.IdentifyError, match="hit your 5-hour limit"):
+        identify.parse("You've hit your 5-hour limit · resets 11:20pm")  # shown to the user, not swallowed
+    with pytest.raises(identify.IdentifyError, match="empty answer"):
+        identify.parse("")
 
 
 @pytest.fixture

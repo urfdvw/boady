@@ -22,7 +22,8 @@ class IdentifyError(Exception):
 def parse(text: str) -> dict[str, Any]:
     matches = LINE_RE.findall(text or "")
     if not matches:
-        raise IdentifyError("no BOADY_ID line in the answer")
+        answer = " ".join((text or "").split())[:200]
+        raise IdentifyError(f"no BOADY_ID line in the answer: {answer}" if answer else "empty answer from Claude Code")
     fields = dict(re.findall(r"(\w+)=(\S+)", matches[-1]))
     if "error" in fields:
         raise IdentifyError(fields["error"])
