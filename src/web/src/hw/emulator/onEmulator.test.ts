@@ -56,6 +56,23 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
         await sleep(1);
       }
     }
+    /** os.listdir on the board, through a raw REPL session like a sync uses. */
+    async function boardListdir(path: string): Promise<string[]> {
+      const { RawRepl } = await import("../rawRepl");
+      const r = new RawRepl(link, signal());
+      const d = dm as unknown as { tap: unknown };
+      const prev = d.tap;
+      d.tap = r;
+      try {
+        await r.enter();
+        const out = await r.exec(`import os\nprint(repr(sorted(os.listdir(${JSON.stringify(path)}))))`);
+        await r.exit();
+        return JSON.parse(out.trim().replace(/'/g, '"'));
+      } finally {
+        await sleep(100);
+        d.tap = prev;
+      }
+    }
     /** wait_for stops at the first marker: it must be the executed result, not the echoed command. */
     function stopsAtResult(text: string, prefix: string) {
       const first = text.indexOf("BOADY_END");
@@ -172,6 +189,9 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       const after = await dm.handle("fs.read_all", {}, signal());
       expect(Object.keys(after.files)).not.toContain("data/blob.bin");
       expect(Object.keys(after.files).some((p) => p.startsWith("data/"))).toBe(false);
+      // the file list cannot show an empty directory: ask the board itself
+      expect(await boardListdir("/")).not.toContain("data");
+      expect(await boardListdir("/")).toContain("lib");
     }, 240000);
 
     it("keeps the console read-only while a sync runs", async () => {
