@@ -223,3 +223,32 @@ async def test_clone_action_opens_the_cloned_project(env, tmp_path):
     r = await ws.action("project.clone", {"url": str(origin)}, "c")
     assert r["ok"] and r["result"]["project"]["type"] == "micropython"
     assert app.project.name == "origin" and (app.project.path / "src" / "main.py").exists()
+
+
+async def test_first_emulator_binding_reaches_a_session_that_already_chatted(env, board, fake_client):
+    """Review 8, finding 4: chat first, then connect the emulator for the first time:
+    the agent's client must get the test-project prompt, not keep the old one."""
+    from claude_agent_sdk import ResultMessage
+
+    async def script(c, text):
+        if "Identify" in text:
+            line = f"BOADY_ID uid={BOARD['uid']} runtime={BOARD['runtime']} version=10.3.2 mpy=6"
+        else:
+            line = "ok"
+        await c.queue.put(ResultMessage(subtype="success", duration_ms=1, duration_api_ms=1, is_error=False,
+                                        num_turns=1, session_id="x", result=line))
+
+    fake_client.script = script
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "t", "type": "circuitpython"})
+    await ws.send({"type": "user_message", "text": "hello"})
+    await ws.wait(lambda m: m.get("kind") == "turn_end", timeout=10)
+    first = app.session.client
+    assert "Emulator tab" not in first.options.system_prompt["append"]
+    await ws.send({"type": "device.attached", "usb": {"vid": None, "pid": None, "emulator": {"runtime": "circuitpython", "firmware": "x"}}, "ports": ["repl"]})
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    assert app.project.board == "rp2040js"
+    assert app.session.client is not first and not first.connected
+    assert "Emulator tab" in app.session.client.options.system_prompt["append"]

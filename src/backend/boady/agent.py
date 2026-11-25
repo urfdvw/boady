@@ -151,6 +151,7 @@ class AgentSession:
         self.partial = ""  # streamed text of the current assistant block
         self._reader: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self._client_prompt: Any = None  # system prompt the current client was started with
         self.on_turn_end: Callable[[], Awaitable[None]] | None = None
         self.on_tool_result: Callable[[], Awaitable[None]] | None = None
 
@@ -214,12 +215,20 @@ class AgentSession:
 
     # -- lifecycle ----------------------------------------------------------
     async def connect(self) -> None:
+        """Connect, or reconnect (resuming the transcript) when the system prompt changed
+        since the client was started, e.g. the first connection made the project a test
+        project (review 8). Never during a turn: the next ``send`` picks it up."""
         async with self._lock:
+            opts = self.build_options()
             if self.client is not None:
-                return
-            client = self.client_factory(self.build_options())
+                if self.running or opts.system_prompt == self._client_prompt:
+                    return
+                await self.close()
+                opts = self.build_options()  # the transcript may exist now: resume it
+            client = self.client_factory(opts)
             await client.connect()
             self.client = client
+            self._client_prompt = opts.system_prompt
             self._reader = asyncio.create_task(self._read_loop())
 
     async def close(self) -> None:
