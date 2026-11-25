@@ -235,7 +235,10 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
         raise HardwareError("Device not connected.")
     _check_board(ctx)
     src = _src(root)
-    mirror = sync.manifest(src)
+    # one snapshot for the hashes and the diffs: a file saved while the board is read
+    # must not appear in the diffs while edited_in_mirror says it was not edited
+    local = sync.snapshot(src)
+    mirror = {rel: sync.sha256(data) for rel, data in local.items()}
     baseline = ctx.get_baseline()
     # Files whose board hash equals a known one are not transferred (``same``). Every file
     # that needs a diff differs from what is sent here: the baseline when there is one
@@ -258,7 +261,7 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
     if baseline is not None:
         out["edited_in_mirror"] = sorted(p for p in out["changed_on_board"] if mirror.get(p) != baseline.get(p))
     interesting = out["changed_on_board"] if baseline is not None else out["board_only"] + out["differs"]
-    out["diffs"] = sync.text_diffs(src, board_files, interesting)
+    out["diffs"] = sync.text_diffs(local, board_files, interesting)
     if baseline is None:
         out["note"] = "No baseline yet (no pull or upload since boady started tracking this board): changed_on_board is unknown."
     return out

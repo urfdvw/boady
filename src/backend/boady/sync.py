@@ -279,9 +279,10 @@ def manifest_of(files_b64: dict[str, str]) -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
-def text_diffs(src: Path, board_b64: dict[str, str], paths: list[str], max_chars: int = 6000) -> dict[str, str]:
+def text_diffs(mirror: dict[str, bytes], board_b64: dict[str, str], paths: list[str], max_chars: int = 6000) -> dict[str, str]:
     """Unified diffs mirror -> board for text files among ``paths`` (truncated):
-    ``+`` lines are what the board has, ``-`` lines what the mirror has."""
+    ``+`` lines are what the board has, ``-`` lines what the mirror has.
+    ``mirror`` is a ``snapshot()``: the same moment the caller's hashes describe."""
     import difflib
 
     out: dict[str, str] = {}
@@ -291,12 +292,11 @@ def text_diffs(src: Path, board_b64: dict[str, str], paths: list[str], max_chars
             break
         try:
             board = base64.b64decode(board_b64[rel]).decode("utf-8") if rel in board_b64 else ""
-            mp = safe_mirror_file(src, rel)
-            mirror = mp.read_text(encoding="utf-8") if mp is not None else ""
+            local = mirror[rel].decode("utf-8") if rel in mirror else ""
         except (UnicodeDecodeError, ValueError, OSError):
             out[rel] = "(binary)"
             continue
-        d = "".join(difflib.unified_diff(mirror.splitlines(True), board.splitlines(True), f"mirror/{rel}", f"board/{rel}"))
+        d = "".join(difflib.unified_diff(local.splitlines(True), board.splitlines(True), f"mirror/{rel}", f"board/{rel}"))
         out[rel] = d[:budget]
         budget -= len(out[rel])
     return out

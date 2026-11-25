@@ -88,7 +88,7 @@ def test_text_diffs_never_read_through_directory_links(tmp_path):
     (src / "lib").symlink_to(outside)
     (src / "code.py").write_text("print(1)\n")
     board = {"lib/config.txt": b64(b"board\n"), "../outside/config.txt": b64(b"x\n"), "code.py": b64(b"print(0)\n")}
-    d = sync.text_diffs(src, board, list(board))
+    d = sync.text_diffs(sync.snapshot(src), board, list(board))
     assert "SECRET" not in "".join(d.values())
     assert "-print(1)" in d["code.py"] and "+print(0)" in d["code.py"]  # mirror -> board
     assert sync.safe_mirror_file(src, "lib/config.txt") is None

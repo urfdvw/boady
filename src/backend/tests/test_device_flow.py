@@ -338,6 +338,28 @@ async def test_compare_only_transfers_files_the_backend_does_not_know(env, board
         BOARD["runtime"] = "circuitpython"
 
 
+async def test_compare_uses_one_mirror_snapshot(env, board):
+    """Review 8, finding 3: a file saved while the board is read must not show up in the
+    diffs while edited_in_mirror says the mirror was not edited."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "snapcmp", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x\n", "data.txt": b"1\n"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    task = asyncio.create_task(mcp_tools.compare_with_device(app.tool_ctx))
+    req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.read_all", timeout=10)
+    (app.project.path / "src" / "data.txt").write_text("saved during the compare\n")
+    await ws.send({"type": "hw.response", "id": req["id"], "ok": True, "result": {"files": {
+        "code.py": base64.b64encode(b"x\n").decode(), "data.txt": base64.b64encode(b"2\n").decode()}}})
+    r = await task
+    assert r["changed_on_board"] == ["data.txt"] and r["edited_in_mirror"] == []
+    assert "saved during the compare" not in r["diffs"]["data.txt"]
+    assert "-1\n" in r["diffs"]["data.txt"] and "+2\n" in r["diffs"]["data.txt"]
+
+
 async def test_compare_without_baseline_says_so(env, board):
     from boady import mcp_tools
 
