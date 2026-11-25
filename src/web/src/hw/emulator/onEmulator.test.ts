@@ -25,6 +25,14 @@ function identifyCommands(): string[] {
   return [...md.matchAll(/^[ \t]*```[ \t]*\n([\s\S]*?)\n[ \t]*```/gm)].map((m) => m[1].trim());
 }
 
+/** The keys step 1 of the identification prompt writes, in order (each `write_repl`). */
+function identifyStopKeys(): string[] {
+  const md = read("../prompts/tasks/identify_board.md").toString();
+  const step = md.split("\n").find((l) => l.startsWith("1. "))!;
+  const keys = step.slice(0, step.indexOf("Read with")).match(/`\\(x0[1-4]|r)`/g) ?? [];
+  return keys.map((k) => (k === "`\\r`" ? "\r" : String.fromCharCode(parseInt(k.slice(3, 5), 16))));
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 for (const runtime of ["micropython", "circuitpython"] as const) {
@@ -138,6 +146,49 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       await waitFor(">>> ", at + uidCmd.length);
       state.device.uid = "DE6118804B2E3C2F";
     }, 60000);
+
+    it("identification step 1 reaches >>> even from a raw REPL left open", async () => {
+      // review 7: an interrupted transfer can leave the board in raw REPL mode
+      let at = stream().length;
+      await type("\x01");
+      await waitFor("raw REPL; CTRL-B to exit", at);
+      at = stream().length;
+      const keys = identifyStopKeys();
+      expect(keys.slice(0, 2)).toEqual(["\x03", "\x03"]);
+      for (const k of keys) {
+        await type(k);
+        await sleep(300);
+      }
+      // the prompt's own fallbacks: one more Enter, and Enter after "Press any key"
+      if (!(await readRepl(at, ">>> ", 3000)).includes(">>> ")) {
+        await type("\r");
+        await sleep(500);
+        if (stream().slice(at).includes("Press any key")) await type("\r");
+      }
+      await waitFor(">>> ", at, 3000);
+    }, 60000);
+
+    if (runtime === "micropython") {
+      it("the /.boady_id fallback creates one ID and keeps it", async () => {
+        const fallback = identifyCommands()[3];
+        expect(fallback).toContain("/.boady_id");
+        const ids: string[] = [];
+        for (let i = 0; i < 2; i++) {
+          const at = stream().length;
+          await type(fallback + "\r");
+          const text = await readRepl(at, "BOADY_END");
+          stopsAtResult(text, "BOADY_UID");
+          const m = text.match(/^BOADY_UID ([0-9A-F]{32}) BOADY_END\r?$/m);
+          expect(m, JSON.stringify(text)).not.toBeNull();
+          ids.push(m![1]);
+          await waitFor(">>> ", at + fallback.length);
+        }
+        expect(ids[1]).toBe(ids[0]);
+        const at = stream().length;
+        await type("import os;os.remove('/.boady_id')\r");
+        await waitFor(">>> ", at + 10);
+      }, 60000);
+    }
 
     it("syncs files both ways through the raw REPL", async () => {
       const bin = new Uint8Array(700).map((_, i) => (i * 37) & 0xff);
