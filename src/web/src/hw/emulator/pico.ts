@@ -123,6 +123,9 @@ export class PicoMachine {
     };
     this.cdc.onSerialData = (v: Uint8Array) => this.onData(Uint8Array.from(v));
     for (const [g, level] of opts.inputs ?? []) this.setPin(g, level);
+    // nothing has been reported yet (no listener existed): the first sample sends the full state,
+    // even if it never changes again (review 13: a saved switch was never shown)
+    this.lastPins = { levels: -1, outputs: -1 };
   }
 
   start(): void {

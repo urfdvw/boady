@@ -452,6 +452,17 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
         };
         expect(await run()).toBe("BOOT14=1"); // nothing wired: the pull-up
         expect(await run([[14, false]])).toBe("BOOT14=0"); // switch to GND on
+        // review 13, finding 3: the UI learns the start-up state, though it never changes later
+        // a fresh flash: no program changes any pin, so nothing else triggers a report
+        const pico = new PicoMachine({ firmware: new Uint8Array(read(FIRMWARE[runtime])), uid: UID, inputs: [[3, true]] });
+        const host = new InProcessHost(pico);
+        const shown = new EmulatorLink(host, { runtime, firmware: runtime });
+        pico.start();
+        await host.ready();
+        const end = Date.now() + 5000;
+        while (!((shown.pins.levels >>> 3) & 1) && Date.now() < end) await sleep(20);
+        pico.stop();
+        expect((shown.pins.levels >>> 3) & 1, JSON.stringify(shown.pins)).toBe(1);
         await dm.handle("fs.apply", { files: {}, delete: ["main.py"] }, signal());
       }, 120000);
     }
