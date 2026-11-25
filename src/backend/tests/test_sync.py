@@ -165,3 +165,19 @@ def test_case_insensitive_probe(tmp_path):
     d.mkdir()
     expected = (tmp_path / "SRC").exists()
     assert sync.case_insensitive(d) is expected
+
+
+def test_full_pull_refuses_board_paths_through_mirror_links(tmp_path):
+    """Review 9, finding 2: b.py -> a.py locally, a.py=A and b.py=B on the board."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.py").write_text("A0")
+    (src / "b.py").symlink_to("a.py")
+    (src / "keep.py").write_text("k")
+    (src / "shared").mkdir()
+    (src / "lib").symlink_to("shared", target_is_directory=True)
+    for board in ({"a.py": b64(b"A"), "b.py": b64(b"B")}, {"a.py": b64(b"A"), "lib/x.py": b64(b"X")}):
+        with pytest.raises(ValueError, match="symlink"):
+            sync.apply_from_device(src, board)
+        assert (src / "a.py").read_text() == "A0" and (src / "b.py").is_symlink()  # nothing changed
+        assert (src / "keep.py").exists() and not (src / "shared" / "x.py").exists()

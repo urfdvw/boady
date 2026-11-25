@@ -142,6 +142,9 @@ def apply_from_device(src: Path, board_files: dict[str, str]) -> dict[str, list[
             raise ValueError(f"case_collision: the board has both {a!r} and {b!r}; this computer's file system cannot keep both")
     for rel in board:
         _safe_target(src, rel)  # refuse unsafe board paths before touching anything
+        if _through_link(src, rel):
+            # b.py -> a.py would merge two board files into one (review 9); like a partial pull
+            raise ValueError(f"refusing a path through a symlink: {rel} (src/ has a symbolic link there; remove it first)")
     current = mirror_files(src)
     added, modified, deleted = [], [], []
     for rel, p in current.items():
