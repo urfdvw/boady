@@ -56,3 +56,18 @@ async def test_wait_for_ignores_text_before_since():
     await rb.append(b">>> ")
     r = await rb.read(since=rb.end, wait_for=">>>", timeout_ms=50)
     assert r.matched is False
+
+
+async def test_wait_for_alternatives_returns_the_first_that_appears():
+    """Review 10, prompt 2: CircuitPython after Ctrl-C shows either "Press any key" or >>>."""
+    rb = RingBuffer(1000)
+    await rb.append(b"old >>> ")
+    task = asyncio.create_task(rb.read(since=rb.end, wait_for=["Press any key", ">>> "], timeout_ms=2000))
+    await asyncio.sleep(0.01)
+    await rb.append(b"KeyboardInterrupt\r\nPress any key to enter the REPL. Use CTRL-D to reload.\r\n")
+    r = await task
+    assert r.matched is True and r.match == "Press any key" and r.to_dict()["match"] == "Press any key"
+    r = await rb.read(since=0, wait_for=["nope", ">>> "], timeout_ms=0)
+    assert r.match == ">>> "
+    r = await rb.read(since=0, wait_for=["nope"], timeout_ms=10)
+    assert r.matched is False and r.match is None

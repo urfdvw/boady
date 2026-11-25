@@ -124,3 +124,11 @@ async def test_read_repl_wait_for_understands_ctrl_escapes(tool_handlers):
     await ctx.bridge.serial_data("repl", b"OK\x04hello\r\n\x04>")
     res = await tools["read_repl"]({"since": 0, "wait_for": r"\x04>", "timeout_ms": 50})
     assert json.loads(res["content"][0]["text"])["matched"] is True
+
+
+async def test_read_repl_wait_for_takes_alternatives(tool_handlers):
+    ctx, _ = await _ctx()
+    tools = tool_handlers(ctx)
+    await ctx.bridge.serial_data("repl", b"\\r\\nKeyboardInterrupt\\r\\nPress any key to enter the REPL.\\r\\n")
+    res = json.loads((await tools["read_repl"]({"since": 0, "wait_for": [">>> ", "Press any key"], "timeout_ms": 50}))["content"][0]["text"])
+    assert res["matched"] is True and res["match"] == "Press any key"

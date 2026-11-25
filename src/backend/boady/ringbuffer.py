@@ -17,6 +17,7 @@ class ReadResult:
     start: int  # position of the first returned byte
     truncated: bool  # requested data was already evicted
     matched: bool | None  # wait_for found (None if not requested)
+    match: str | None = None  # which wait_for alternative appeared first in the stream
 
     def to_dict(self) -> dict:
         return {
@@ -25,6 +26,7 @@ class ReadResult:
             "start": self.start,
             "truncated": self.truncated,
             "matched": self.matched,
+            "match": self.match,
         }
 
 
@@ -71,26 +73,31 @@ class RingBuffer:
         self,
         since: int | None = None,
         tail: int | None = None,
-        wait_for: str | None = None,
+        wait_for: str | list[str] | None = None,
         timeout_ms: int = 0,
     ) -> ReadResult:
+        """``wait_for``: a text, or several alternatives (returns when any appears;
+        ``match`` says which one came first)."""
         matched: bool | None = None
-        if wait_for:
-            needle = wait_for.encode()
+        match: str | None = None
+        needles = [w for w in ([wait_for] if isinstance(wait_for, str) else (wait_for or [])) if w]
+        if needles:
             origin = since if since is not None else self._start
 
-            def found() -> bool:
+            def first() -> str | None:
                 lo = max(origin, self._start) - self._start
-                return self._buf.find(needle, lo) >= 0
+                hits = [(i, w) for w in needles if (i := self._buf.find(w.encode(), lo)) >= 0]
+                return min(hits)[1] if hits else None
 
             async with self._cond:
                 try:
-                    await asyncio.wait_for(self._cond.wait_for(found), max(timeout_ms, 0) / 1000)
-                    matched = True
+                    await asyncio.wait_for(self._cond.wait_for(lambda: first() is not None), max(timeout_ms, 0) / 1000)
                 except asyncio.TimeoutError:
-                    matched = found()
+                    pass
+                match = first()
+                matched = match is not None
         data, start, truncated = self._slice(since, tail)
-        return ReadResult(data.decode("utf-8", errors="replace"), start + len(data), start, truncated, matched)
+        return ReadResult(data.decode("utf-8", errors="replace"), start + len(data), start, truncated, matched, match)
 
     def clear(self) -> None:
         self._start = self.end

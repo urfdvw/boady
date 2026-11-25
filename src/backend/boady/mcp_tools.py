@@ -50,6 +50,12 @@ def decode_wait_for(text: str) -> str:
     return _WAIT_ESC.sub(lambda m: _WAIT_CHARS.get(m.group(1)) or chr(int(m.group(1)[1:], 16)), text)
 
 
+def _wait_arg(w: Any) -> str | list[str] | None:
+    if isinstance(w, list):
+        return [decode_wait_for(str(x)) for x in w if x] or None
+    return decode_wait_for(str(w)) if w else None
+
+
 @dataclass
 class ToolContext:
     bridge: HardwareBridge
@@ -80,7 +86,11 @@ READ_SCHEMA = {
     "properties": {
         "since": {"type": "integer", "description": "Cursor (byte position) to read from; use the cursor returned by a write."},
         "tail": {"type": "integer", "description": "Only return the last N lines."},
-        "wait_for": {"type": "string", "description": "Wait until this text appears after `since`. \\x01-\\x04, \\r and \\n may be written as escapes."},
+        "wait_for": {
+            "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+            "description": "Wait until this text (or any of these texts) appears after `since`; `match` tells which came first. "
+            "\\x01-\\x04, \\r and \\n may be written as escapes.",
+        },
         "timeout_ms": {"type": "integer", "description": "Max wait for `wait_for` (default 0)."},
     },
 }
@@ -280,7 +290,7 @@ def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bo
         r = await b.buffers[port].read(
             since=args.get("since"),
             tail=args.get("tail"),
-            wait_for=decode_wait_for(str(args["wait_for"])) if args.get("wait_for") else None,
+            wait_for=_wait_arg(args.get("wait_for")),
             timeout_ms=int(args.get("timeout_ms") or 0),
         )
         return _ok(r.to_dict())
