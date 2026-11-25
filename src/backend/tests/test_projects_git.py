@@ -254,3 +254,45 @@ async def test_clone_refuses_linked_metadata(tmp_path):
     with pytest.raises(projects.ProjectError, match="CLAUDE.md is a symbolic link"):
         await projects.clone(pdir, str(src), set(), never)
     assert not (pdir / "linked").exists()
+
+
+async def test_clone_adds_only_the_missing_project_documents(tmp_path):
+    """Master 2026-11-25 (D44): a clone gets the documents a new project has, never
+    overwriting what the repository has (any spelling), never through a link, no code."""
+    src = tmp_path / "docs"
+    (src / "src").mkdir(parents=True)
+    (src / "src" / "main.py").write_text("print(1)\n")
+    (src / "boady.json").write_text('{"type": "micropython"}')
+    (src / "readme.md").write_text("their readme\n")  # README.md under another spelling
+    (src / "CLAUDE.md").write_text("their rules\n")
+    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "commit", "-qm", "init"]):
+        subprocess.run(cmd, cwd=src, check=True)
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+
+    async def never(_root):
+        raise AssertionError("classifier must not run")
+
+    root, name, t = await projects.clone(pdir, str(src), set(), never)
+    assert (root / "CLAUDE.md").read_text() == "their rules\n"
+    assert (root / "readme.md").read_text() == "their readme\n"
+    assert sorted(p.name for p in root.iterdir() if p.name.lower() == "readme.md") == ["readme.md"]
+    assert (root / "DESIGN.md").read_text().strip()  # the new-project template
+    assert (root / "src" / "CIRCUIT.md").is_file()
+    assert sorted(p.name for p in (root / "src").iterdir()) == ["CIRCUIT.md", "main.py"]  # no code added
+    status = {f["path"]: f["status"] for f in await gitops.status(root)}
+    assert status == {"DESIGN.md": "added", "src/CIRCUIT.md": "added"}  # uncommitted: the user decides
+
+
+def test_fill_missing_docs_skips_links(tmp_path):
+    root = tmp_path / "p"
+    (root / "src").mkdir(parents=True)
+    (root / "DESIGN.md").symlink_to(tmp_path / "nowhere.md")  # dangling: a write would create it
+    (root / "lib").mkdir()
+    added = projects.fill_missing_docs(root, "p", "circuitpython")
+    assert sorted(added) == ["CLAUDE.md", "README.md", "src/CIRCUIT.md"]
+    assert not (tmp_path / "nowhere.md").exists()
+    (root / "src" / "CIRCUIT.md").unlink()
+    (root / "src").rename(root / "real_src")
+    (root / "src").symlink_to(root / "real_src", target_is_directory=True)
+    assert projects.fill_missing_docs(root, "p", "circuitpython") == []  # src/ is a link: left alone

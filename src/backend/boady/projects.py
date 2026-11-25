@@ -97,15 +97,46 @@ def _render(text: str, name: str, project_type: str) -> str:
     return text.replace("{{name}}", name).replace("{{type}}", project_type).replace("{{type_label}}", TYPE_LABEL[project_type])
 
 
+def _doc_texts(name: str, project_type: str) -> dict[str, str]:
+    """The project documents of a new project (not code), by path."""
+    out = {"CLAUDE.md": _render(prompts.project_claude_md(project_type), name, project_type)}
+    for fname, dest in (("DESIGN.md", "DESIGN.md"), ("README.md", "README.md"), ("CIRCUIT.md", "src/CIRCUIT.md")):
+        out[dest] = _render((SKELETON_DIR / fname).read_text(encoding="utf-8"), name, project_type)
+    return out
+
+
 def write_skeleton(root: Path, name: str, project_type: str) -> None:
     (root / "src").mkdir(parents=True, exist_ok=True)
     write_type(root, project_type)
-    (root / "CLAUDE.md").write_text(_render(prompts.project_claude_md(project_type), name, project_type), encoding="utf-8")
-    for fname, dest in (("DESIGN.md", "DESIGN.md"), ("README.md", "README.md"), ("CIRCUIT.md", "src/CIRCUIT.md")):
-        text = (SKELETON_DIR / fname).read_text(encoding="utf-8")
-        (root / dest).write_text(_render(text, name, project_type), encoding="utf-8")
+    for dest, text in _doc_texts(name, project_type).items():
+        (root / dest).write_text(text, encoding="utf-8")
     entry = ENTRY_FILE[project_type]
     shutil.copyfile(SKELETON_DIR / entry, root / "src" / entry)
+
+
+def _taken(d: Path, name: str) -> bool:
+    """An entry ``name`` exists in ``d`` under any spelling (``readme.md`` counts for
+    ``README.md``), or as a link, even a dangling one."""
+    try:
+        return any(e.name.casefold() == name.casefold() for e in d.iterdir())
+    except OSError:
+        return True  # unreadable (or a file where a directory should be): leave it alone
+
+
+def fill_missing_docs(root: Path, name: str, project_type: str) -> list[str]:
+    """After a clone: add the project documents a new project has (CLAUDE.md,
+    DESIGN.md, README.md, src/CIRCUIT.md) that the repository lacks. Existing files
+    under any spelling and links are left alone; no code files. Left uncommitted
+    (git is manual). Returns the added paths (D44)."""
+    added = []
+    for dest, text in _doc_texts(name, project_type).items():
+        f = root / dest
+        d = f.parent
+        if d.is_symlink() or not d.is_dir() or _taken(d, f.name):
+            continue
+        f.write_text(text, encoding="utf-8")
+        added.append(dest)
+    return added
 
 
 async def create(projects_dir: Path, name: str, project_type: str) -> Path:
@@ -189,6 +220,7 @@ async def clone(projects_dir: Path, url: str, taken: set[str], classify: Classif
             raise ProjectError("repo_unfit: " + str(verdict.get("reason") or "type could not be determined"))
         project_type = verdict["type"]
         write_type(root, project_type)  # left uncommitted: git is manual
+    fill_missing_docs(root, name, project_type)
     return root, name, project_type
 
 

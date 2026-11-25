@@ -142,6 +142,8 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 
 **D43 — Files boady handles without a tool call are never followed through links (review 9).** `boady.json` and `CLAUDE.md` are read (type, board kind, the system prompt) and `boady.json` is written (type after a clone, board kind at the first connection) by boady itself, without the approval a `Read` / `Write` outside the project would need. They are used only as regular files of the project: through a symbolic link they count as missing and writing refuses (`unsafe_project_file`); a clone whose `boady.json` or `CLAUDE.md` is a link is unfit.
 
+**D44 — A clone gets the missing project documents (Master, 2026-11-25; merged into specs.md).** "视同建立项目" was ambiguous (review 7). After a clone, once the type is known (from `boady.json` or the classifier), `fill_missing_docs` writes those of `CLAUDE.md`, `DESIGN.md`, `README.md` and `src/CIRCUIT.md` that the repository lacks, from the new-project templates. Not written: a file that exists under any spelling (`readme.md` counts for `README.md`), a link (even a dangling one) or a path in a linked / missing directory, and code files (`code.py` / `main.py` would change what the board runs). Only at clone time; left uncommitted, so they show as added in the Version tab. The system prompt says these files may be missing and the agent may suggest creating them.
+
 ## Pre-check checklist (needs Master)
 
 Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)

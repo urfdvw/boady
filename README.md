@@ -26,7 +26,7 @@ python run.py
 
 ## Using boady
 
-- **Projects page**: create a project (name + CircuitPython or MicroPython, optionally a private GitHub repo), clone an existing repository, open or delete projects. Each project is a git repository under `~/.boady/projects/` with this layout:
+- **Projects page**: create a project (name + CircuitPython or MicroPython, optionally a private GitHub repo), clone an existing repository (boady adds the project documents below that it lacks, without touching existing files or code; they show up as uncommitted changes), open or delete projects. Each project is a git repository under `~/.boady/projects/` with this layout:
 
   ```
   <project>/
