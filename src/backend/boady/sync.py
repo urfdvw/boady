@@ -217,6 +217,13 @@ def apply_paths(src: Path, board_files: dict[str, str], paths: list[str]) -> dic
         alias = case_alias(src, p)
         if alias:
             raise ValueError(f"{p!r} would reach {alias!r} (different spelling); use the exact name")
+    # two paths of this pull that are one entry here (review 14), like the full pull
+    fold_case, fold_unicode = case_insensitive(src), normalization_insensitive(src)
+    if fold_case or fold_unicode:
+        clashes = case_collisions(list(paths), fold_case, fold_unicode)
+        if clashes:
+            a, b = clashes[0]
+            raise ValueError(f"case_collision: {a!r} and {b!r} would be one file on this computer, which cannot keep both; rename one on the board")
     board = {k.strip("/"): v for k, v in board_files.items()}
     added, modified, deleted = [], [], []
     for rel in paths:

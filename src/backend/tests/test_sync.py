@@ -237,3 +237,17 @@ def test_full_pull_refuses_two_board_files_one_name_here(tmp_path):
     with pytest.raises(ValueError, match="case_collision"):
         sync.apply_from_device(src, {NFC: b64(b"1"), NFD: b64(b"2")})
     assert sorted(p.name for p in src.iterdir()) == ["keep.py"]  # nothing changed
+
+
+def test_partial_pull_refuses_two_new_paths_that_are_one_file_here(tmp_path):
+    """Review 14, finding 2: NFC and NFD into an empty mirror both 'succeeded' into one file."""
+    src = tmp_path / "src"
+    src.mkdir()
+    fold_unicode, fold_case = sync.normalization_insensitive(src), sync.case_insensitive(src)
+    if not (fold_unicode or fold_case):
+        pytest.skip("this file system keeps every spelling apart")
+    pairs = ([NFC, NFD] if fold_unicode else []) + (["A.txt", "a.txt"] if fold_case else [])
+    for a, b in zip(pairs[::2], pairs[1::2]):
+        with pytest.raises(ValueError, match="case_collision"):
+            sync.apply_paths(src, {a: b64(b"1"), b: b64(b"2")}, [a, b])
+        assert list(src.iterdir()) == []  # nothing written
