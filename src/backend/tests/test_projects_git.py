@@ -150,3 +150,28 @@ def test_project_table_persistence(tmp_path):
 def test_delete_dir_guard(tmp_path):
     with pytest.raises(projects.ProjectError):
         projects.delete_dir(tmp_path / "projects", tmp_path / "elsewhere")
+
+
+async def test_reset_file_refuses_outside_paths(tmp_path):
+    """Review finding 8: 'demo' must not treat 'demo-other' as inside."""
+    from boady import files
+
+    root = await projects.create(tmp_path, "demo", "circuitpython")
+    other = tmp_path / "demo-other"
+    other.mkdir()
+    (other / "keep.txt").write_text("keep")
+    for bad in ("../demo-other/keep.txt", ".git/config", "src/../../demo-other/keep.txt"):
+        with pytest.raises(files.PathError):
+            await gitops.reset_file(root, bad)
+    assert (other / "keep.txt").read_text() == "keep"
+
+
+async def test_reset_renamed_file(tmp_path):
+    """Review finding 9: resetting a rename restores the source."""
+    root = await projects.create(tmp_path, "r", "circuitpython")
+    subprocess.run(["git", "mv", "src/code.py", "src/renamed.py"], cwd=root, check=True)
+    st = await gitops.status(root)
+    assert st == [{"path": "src/renamed.py", "status": "renamed", "from": "src/code.py"}]
+    await gitops.reset_file(root, "src/renamed.py")
+    assert (root / "src" / "code.py").exists() and not (root / "src" / "renamed.py").exists()
+    assert await gitops.status(root) == []

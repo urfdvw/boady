@@ -33,6 +33,14 @@ ROOT = Path("/tmp/proj")
         ("mcp__boady__sync_to_device", {}, "ask"),
         ("mcp__boady__install_library", {"names": ["aioble"]}, "allow"),
         ("TodoWrite", {}, "allow"),
+        # review finding 1: options must not turn "read-only" git into a writer
+        ("Bash", {"command": "git diff --output=../outside.txt"}, "ask"),
+        ("Bash", {"command": "git log -p --output ../x"}, "ask"),
+        ("Bash", {"command": "git diff -O/etc/passwd"}, "ask"),
+        ("Bash", {"command": "git diff --no-index a b"}, "ask"),
+        ("Bash", {"command": "git log --format=%H -n5 --stat"}, "allow"),
+        ("Bash", {"command": "git status --porcelain --untracked-files=all"}, "allow"),
+        ("Bash", {"command": "git config --file /etc/x --get a"}, "ask"),
         ("WebFetch", {"url": "https://x"}, "ask"),
     ],
 )
@@ -60,6 +68,11 @@ def test_classify(tool, inp, expected):
         ("circup --path /tmp other install foo", True),
         ("circup --path src install foo", False),
         ("git filter-branch", True),
+        ("git diff --output=../outside.txt", True),
+        ("git log --output ../x", True),
+        ("git push --receive-pack=evil", True),
+        ("git fetch --upload-pack=evil origin", True),
+        ("git diff --ext-diff", True),
     ],
 )
 def test_hard_block_bash(cmd, blocked):

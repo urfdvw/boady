@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from . import files
 from .proc import ProcError, run
 
 FALLBACK_IDENTITY = ["-c", "user.name=boady", "-c", "user.email=boady@localhost"]
@@ -46,8 +47,10 @@ async def status(repo: Path) -> list[dict[str, str]]:
         if len(item) < 4:
             continue
         xy, path = item[:2], item[3:]
+        orig = None
         if "R" in xy:
-            i += 1  # skip the "from" path
+            orig = parts[i] if i < len(parts) else None  # -z: rename source follows
+            i += 1
             st = "renamed"
         elif xy == "??" or "A" in xy:
             st = "added"
@@ -55,6 +58,9 @@ async def status(repo: Path) -> list[dict[str, str]]:
             st = "deleted"
         else:
             st = "modified"
+        if orig:
+            entries.append({"path": path, "status": st, "from": orig})
+            continue
         entries.append({"path": path, "status": st})
     entries.sort(key=lambda e: e["path"])
     return entries
@@ -102,7 +108,7 @@ async def commit(repo: Path, message: str) -> str:
     return (await git(repo, "rev-parse", "HEAD")).strip()
 
 
-async def reset_file(repo: Path, path: str) -> None:
+async def _reset_one(repo: Path, path: str) -> None:
     tracked_in_head = (await has_commits(repo)) and (
         await run(["git", "cat-file", "-e", f"HEAD:{path}"], cwd=repo)
     ).ok
@@ -110,9 +116,19 @@ async def reset_file(repo: Path, path: str) -> None:
         await git(repo, "restore", "--staged", "--worktree", "--source=HEAD", "--", path)
     else:
         await run(["git", "rm", "-q", "--cached", "--ignore-unmatch", "--", path], cwd=repo)
-        target = (repo / path).resolve()
-        if target.is_file() and str(target).startswith(str(repo.resolve())):
+        target = files.resolve(repo, path)
+        if target.is_file():
             target.unlink()
+
+
+async def reset_file(repo: Path, path: str) -> None:
+    """Discard changes to one path; a rename is undone on both ends."""
+    files.resolve(repo, path)  # refuses paths outside the project and inside .git
+    entry = next((e for e in await status(repo) if e["path"] == path), None)
+    await _reset_one(repo, path)
+    if entry and entry.get("from"):
+        files.resolve(repo, entry["from"])
+        await _reset_one(repo, entry["from"])
 
 
 async def reset_all(repo: Path) -> None:

@@ -11,6 +11,7 @@ see Specs/additional_specs.md, decision D3.
 
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path
 from typing import Any, Literal
@@ -38,6 +39,20 @@ GIT_ALLOWED = GIT_READONLY | {
     "pull", "fetch", "rm", "mv", "tag", "stash", "remote", "revert", "merge",
 }
 CIRCUP_AUTO = {"install", "update", "uninstall", "list", "freeze", "show"}
+# Options that write files or run programs: denied for every git subcommand.
+GIT_DENY_OPTS = ("--output", "--output-directory", "--upload-pack", "--receive-pack", "--exec",
+                 "--ext-diff", "--open-files-in-pager", "--config-env", "--template", "--separate-git-dir")
+# Options a read-only git command may carry and still run without approval.
+# Anything else (e.g. -O<file>, --no-index, unknown options) asks the user.
+GIT_SAFE_OPT_RE = re.compile(
+    r"^(--|-[0-9]+|-n[0-9]*|-U[0-9]*|-[pswvbuMCRBz]|-l"
+    r"|--(stat|numstat|shortstat|name-only|name-status|summary|patch|no-patch|raw|oneline|graph|decorate|no-decorate"
+    r"|abbrev-commit|cached|staged|short|long|branch|porcelain|all|reverse|follow|first-parent|no-merges|merges"
+    r"|no-color|color|word-diff|ignore-all-space|ignore-space-change|show-signature|verbose|list|ignored|stage"
+    r"|others|modified|deleted|untracked-files|no-renames|find-renames|full-history|date-order|topo-order)"
+    r"|--(format|pretty|max-count|since|until|after|before|author|committer|grep|diff-filter|abbrev|date"
+    r"|untracked-files|color|word-diff|stat|unified|find-renames|ignore-submodules)=[^\s]*)$"
+)
 SHELL_META = (";", "&", "|", "`", "$(", ">", "<", "\n", "\r")
 
 Decision = Literal["allow", "ask"]
@@ -99,7 +114,9 @@ def _circup_path_ok(argv: list[str], root: Path) -> bool:
 def _args_leave_root(argv: list[str], root: Path) -> bool:
     for a in argv[1:]:
         if a.startswith("-"):
-            continue
+            if "=" not in a:
+                continue
+            a = a.split("=", 1)[1]  # check option values too: --x=/elsewhere
         if a.startswith("/") or a.startswith("~") or ".." in Path(a).parts:
             if not _inside(root, a.replace("~", str(Path.home()), 1)):
                 return True
@@ -125,6 +142,9 @@ def hard_block(tool: str, inp: dict[str, Any], root: Path) -> str | None:
             return "Changing git config is not allowed."
         if argv[1] not in GIT_ALLOWED:
             return f"git {argv[1]} is not in the boady whitelist."
+        for a in argv[2:]:
+            if a.split("=", 1)[0] in GIT_DENY_OPTS:
+                return f"git option {a.split('=', 1)[0]} is not allowed (it writes files or runs programs)."
         return None
     if prog == "circup":
         if not _circup_path_ok(argv, root):
@@ -151,11 +171,12 @@ def classify(tool: str, inp: dict[str, Any], root: Path) -> Decision:
         if _args_leave_root(argv, root):
             return "ask"
         if argv[0] == "git" and len(argv) > 1:
+            opts_ok = all(GIT_SAFE_OPT_RE.match(a) for a in argv[2:] if a.startswith("-"))
             if argv[1] in GIT_READONLY:
-                return "allow"
+                return "allow" if opts_ok else "ask"
             if argv[1] == "branch" and len(argv) == 2:
                 return "allow"
-            if argv[1] == "config":
+            if argv[1] == "config" and all(a in ("--get", "--get-all", "--list", "-l") or not a.startswith("-") for a in argv[2:]):
                 return "allow"
             return "ask"
         if argv[0] == "circup" and _circup_path_ok(argv, root):

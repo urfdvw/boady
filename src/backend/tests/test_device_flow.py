@@ -139,3 +139,46 @@ async def test_identify_failure_reported(env, fake_client):
     assert "no_prompt" in st["device"]["error"]
     opts = fake_client.instances[-1].options
     assert opts.allowed_tools == ["mcp__boady__read_repl", "mcp__boady__write_repl"] and opts.tools == []
+
+
+async def test_open_foreign_project_checks_runtime_and_blocks_sync(env, board):
+    """Review finding 6."""
+    app, client = env
+    ws = await connect(client, app.token)
+    cp = (await ws.action("project.create", {"name": "cp", "type": "circuitpython"}, "1"))["result"]["project"]["id"]
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    # a MicroPython project bound to some other board
+    mp = (await ws.action("project.create", {"name": "mp", "type": "micropython"}, "2"))["result"]["project"]["id"]
+    sel = await ws.wait(lambda m: m["type"] == "project.select_required", timeout=10)
+    assert sel["reason"] == "runtime_mismatch" and app.project is None
+    app.table.update(mp, board_uid="FFFF0000")
+    # a second CircuitPython project bound to another board: stays open, but no sync
+    other = (await ws.action("project.create", {"name": "cp2", "type": "circuitpython"}, "3"))["result"]["project"]["id"]
+    await answer_pull(ws, {"code.py": b"x"})  # created while connected -> bound to this board
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    app.table.update(other, board_uid="FFFF0001")
+    app.project = app.table.get(other)
+    r = await ws.action("device.push", {}, "4")
+    assert not r["ok"] and "board_other_project" in r["error"]
+    r = await ws.action("device.pull", {}, "5")
+    assert not r["ok"] and "board_other_project" in r["error"]
+    assert cp
+
+
+async def test_pull_reasks_when_mirror_changes_during_transfer(env, board):
+    """Review finding 2: edits saved while the board is read are not lost silently."""
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "p1", "type": "circuitpython"})
+    await attach(ws)
+    req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.read_all", timeout=10)
+    # mirror was clean when the pull started; the user saves an edit mid-transfer
+    (app.project.path / "src" / "code.py").write_text("saved during transfer")
+    await ws.send({"type": "hw.response", "id": req["id"], "ok": True, "result": {"files": {"code.py": base64.b64encode(b"board").decode()}}})
+    perm = await ws.wait(lambda m: m["type"] == "permission_request", timeout=10)
+    assert perm["detail"]["files"] == ["src/code.py"]
+    await ws.send({"type": "permission_reply", "request_id": perm["request_id"], "allow": False})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text") == "pull_declined")
+    assert (app.project.path / "src" / "code.py").read_text() == "saved during transfer"

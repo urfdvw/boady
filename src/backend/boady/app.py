@@ -73,6 +73,7 @@ class App:
         )
         self.auth_status: dict[str, Any] = {"claude": None, "github": None}
         self.tool_ctx.on_synced = self.on_synced
+        self.tool_ctx.board_error = self.board_error
         self.tool_ctx.project_info = lambda: (self.project.type, self.project.mpy_version) if self.project else None
         self._tasks: set[asyncio.Task] = set()
         self._identify_task: asyncio.Task | None = None
@@ -422,10 +423,11 @@ class App:
             await self.push_state()
             return
         p = self.project
+        if p is not None and (explicit or p.board_uid in (None, uid)) and p.type != runtime:
+            # runtime check first, independent of which board the project is bound to
+            await self.runtime_mismatch(p, runtime)
+            return
         if p is not None and p.board_uid in (None, uid):
-            if p.type != runtime:
-                await self.runtime_mismatch(p, runtime)
-                return
             self.project = self.table.update(p.id, board_uid=uid, mpy_version=d.mpy_version)
             await self.project_ready()
             return
@@ -450,6 +452,19 @@ class App:
             "candidates": [self._project_info(c) for c in cands] if cands else None,
         }
         await self.send(self.select_required)
+
+    def board_error(self) -> str | None:
+        """Reason why the connected board must not be written to for the open project."""
+        d, p = self.bridge.device, self.project
+        if p is None or not d.attached:
+            return None
+        if not d.uid:
+            return "The board has not been identified yet."
+        if d.runtime != p.type:
+            return f"runtime_mismatch: the board runs {d.runtime}, the project is {p.type}."
+        if p.board_uid and p.board_uid != d.uid:
+            return f"board_other_project: the connected board ({d.uid}) is bound to another project, not to '{p.name}' ({p.board_uid})."
+        return None
 
     async def runtime_mismatch(self, p: Project, runtime: str) -> None:
         """Stop everything, tell the user, back to the project page."""

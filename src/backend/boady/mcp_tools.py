@@ -37,6 +37,8 @@ class ToolContext:
     on_synced: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
     # (project type, .mpy version) of the open project, or None
     project_info: Callable[[], tuple[str, int | None] | None] = lambda: None
+    # why the connected board must not be used with the open project, or None
+    board_error: Callable[[], str | None] = lambda: None
 
 
 def _ok(data: Any) -> dict[str, Any]:
@@ -63,24 +65,49 @@ WRITE_SCHEMA = {
 }
 
 
+async def _dirty_src(root: Path) -> list[str]:
+    return [f["path"] for f in await gitops.status(root) if f["path"].startswith("src/")]
+
+
 async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]:
-    """Shared by the tool and the user's pull button. Raises HardwareError."""
+    """Shared by the tool and the user's pull button. Raises HardwareError.
+
+    Uncommitted changes in src/ are only overwritten with the user's consent.
+    The transfer can take minutes, so the mirror is fingerprinted before it and
+    compared again right before writing; anything changed meanwhile is asked
+    about again. The final compare and the write run without awaiting in
+    between, so nothing in this process can interleave.
+    """
     root = ctx.project_dir()
     if root is None:
         raise HardwareError("No project is open.")
     if not ctx.bridge.connected:
         raise HardwareError("Device not connected.")
-    dirty = [f["path"] for f in await gitops.status(root) if f["path"].startswith("src/")]
-    if dirty and ask:
-        allowed = await ctx.confirm("pull_overwrites", {"files": dirty})
-        if not allowed:
-            return {"declined": True}
+    _check_board(ctx)
+    dirty = await _dirty_src(root)
+    if dirty and ask and not await ctx.confirm("pull_overwrites", {"files": dirty}):
+        return {"declined": True}
+    before = sync.manifest(root / "src")
     res = await ctx.bridge.request("fs.read_all", {}, timeout=300)
+    while True:
+        now = sync.manifest(root / "src")
+        changed = sorted("src/" + p for p in set(before) | set(now) if before.get(p) != now.get(p))
+        if not changed:
+            break
+        if not await ctx.confirm("pull_overwrites", {"files": changed}):
+            return {"declined": True}
+        before = now  # re-check: more edits may have arrived while asking
     changes = sync.apply_from_device(root / "src", (res or {}).get("files", {}))
     if ctx.on_synced:
         await ctx.on_synced("pull", changes)
     await ctx.on_mirror_changed()
     return changes
+
+
+def _check_board(ctx: ToolContext) -> None:
+    err = ctx.board_error()
+    if err:
+        raise HardwareError(err)
 
 
 async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
@@ -89,6 +116,7 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
         raise HardwareError("No project is open.")
     if not ctx.bridge.connected:
         raise HardwareError("Device not connected.")
+    _check_board(ctx)
     src = root / "src"
     plan = await ctx.bridge.request("fs.plan", {"manifest": sync.manifest(src)}, timeout=300) or {}
     need = list(plan.get("need", []))
@@ -123,6 +151,7 @@ def build_server(ctx: ToolContext, only: set[str] | None = None):
 
     async def _write(port: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
+            _check_board(ctx)
             cursor = await b.write(port, decode_ctrl(str(args.get("data", ""))))
         except HardwareError as e:
             return _err(str(e))
