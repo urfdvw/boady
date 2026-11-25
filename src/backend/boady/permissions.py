@@ -97,19 +97,29 @@ def parse_bash(command: str) -> list[str] | None:
 
 
 def _circup_path_ok(argv: list[str], root: Path) -> bool:
+    """Exactly one --path, pointing at the project's src/, and no network target.
+
+    circup uses the last --path given, so a second one could point anywhere;
+    --host would target a device over the network instead of the mirror.
+    """
     src = root / "src"
+    paths: list[str] = []
     for i, a in enumerate(argv):
-        val = None
-        if a == "--path" and i + 1 < len(argv):
-            val = argv[i + 1]
+        name = a.split("=", 1)[0]
+        if name in ("--host", "--port", "--password"):
+            return False
+        if a == "--path":
+            if i + 1 >= len(argv):
+                return False
+            paths.append(argv[i + 1])
         elif a.startswith("--path="):
-            val = a.split("=", 1)[1]
-        if val is not None:
-            p = Path(val)
-            if not p.is_absolute():
-                p = root / p
-            return p.resolve() == src.resolve()
-    return False
+            paths.append(a.split("=", 1)[1])
+    if len(paths) != 1:
+        return False
+    p = Path(paths[0])
+    if not p.is_absolute():
+        p = root / p
+    return p.resolve() == src.resolve()
 
 
 def _args_leave_root(argv: list[str], root: Path) -> bool:

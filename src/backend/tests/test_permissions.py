@@ -67,6 +67,10 @@ def test_classify(tool, inp, expected):
         ("circup install foo", True),
         ("circup --path /tmp other install foo", True),
         ("circup --path src install foo", False),
+        # review 6, finding 1: circup uses the last --path; network targets are not the mirror
+        ("circup --offline --path src --path alternate uninstall sensor", True),
+        ("circup --path=src --path=/tmp uninstall sensor", True),
+        ("circup --path src --host 192.168.1.5 uninstall sensor", True),
         ("git filter-branch", True),
         ("git diff --output=../outside.txt", True),
         ("git log --output ../x", True),
