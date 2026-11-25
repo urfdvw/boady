@@ -78,4 +78,31 @@ describe("Emulator tab in a DOM", () => {
     key(other, "keyup");
     expect(f.calls).toEqual([[14, false], [14, null]]);
   });
+
+  it("a switch stays on until pressed again, and its options are saved per project (review 10, coverage)", () => {
+    const label = () => [...host.querySelectorAll(".emu-label.gpio")].find((e) => e.textContent?.startsWith("GP14")) as HTMLElement;
+    act(() => label().dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const choose = (name: string) =>
+      act(() => (([...host.querySelectorAll('.emu-options [role="radio"]')] as HTMLElement[]).find((b) => b.textContent === name)!.click()));
+    choose("Switch");
+    choose("high"); // "Pressed drives" high (first "high" in the options row)
+    const press = () => {
+      act(() => void button().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 })));
+      act(() => void button().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 })));
+    };
+    press();
+    expect(f.calls).toEqual([[14, true]]); // on: stays driven after the pointer goes up
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    press();
+    expect(f.calls).toEqual([[14, true], [14, null]]); // off again
+    press();
+    const saved = JSON.parse(window.localStorage.getItem("boady.emulatorParts.p-dom")!);
+    expect(saved).toEqual({ parts: { 14: { button: "toggle", drive: "high", led: "activeHigh" } }, on: [14] });
+    // LED lit on low: GP14 is high in the fake pins, so its LED goes dark
+    const leds = () => [...host.querySelectorAll(".emu-led")].filter((e) => e.closest("g")?.textContent?.includes("GP14"));
+    expect(leds()[0].getAttribute("class")).toContain("lit");
+    const lowButtons = ([...host.querySelectorAll('.emu-options [role="radio"]')] as HTMLElement[]).filter((b) => b.textContent === "low");
+    act(() => lowButtons[1].click()); // "LED lights on" low
+    expect(leds()[0].getAttribute("class")).not.toContain("lit");
+  });
 });

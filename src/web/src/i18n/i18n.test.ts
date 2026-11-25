@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import en from "./en.json";
 import zh from "./zh.json";
-import { translate, translateError } from "./index";
+import { translate, translateError, translateNotice } from "./index";
 
 describe("i18n", () => {
   it("both languages define the same keys", () => {
@@ -27,5 +27,14 @@ describe("i18n", () => {
       "Could not identify the board. (You've hit your 5-hour limit)",
     );
     expect(translateError("zh", "case_collision: the board has both 'a.py' and 'A.py'")).toContain("'a.py' and 'A.py'");
+  });
+
+  it("translates backend notices (review 10, coverage)", () => {
+    const pulled = 'pulled: {"added": ["a.py"], "modified": [], "deleted": ["b.py", "c.py"], "channel": "serial", "program_stopped": true}';
+    expect(translateNotice("en", pulled)).toBe("Pulled the board files into src/: 1 added, 0 modified, 2 deleted.");
+    expect(translateNotice("en", "pulled: not json")).toBe("pulled: not json");
+    expect(translateNotice("en", "pull_failed: Device not connected.")).toBe("Could not pull from the board: Device not connected.");
+    expect(translateNotice("zh", "pull_declined")).toBe(translate("zh", "notice.pull_declined"));
+    expect(translateNotice("en", "Claude Code could not start: boom")).toBe("Claude Code could not start: boom"); // unknown: as is
   });
 });

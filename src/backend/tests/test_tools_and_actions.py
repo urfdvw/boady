@@ -272,3 +272,16 @@ async def test_reads_say_whether_the_program_was_stopped(env, board, tool_handle
                            "result": {"files": {"code.py": base64.b64encode(b"x").decode()}, "channel": channel}})
             out = body(await task)
             assert out["channel"] == channel and out["program_stopped"] is stopped, (name, out)
+
+
+async def test_library_tools_succeed_for_the_agent(env, fake_circup, tool_handlers):
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "libtools", "type": "circuitpython"})
+    (app.project.path / "src" / "boot_out.txt").write_text("Adafruit CircuitPython 9.2.1\n")
+    tools = tool_handlers(app.tool_ctx)
+    res = await tools["install_library"]({"names": ["adafruit_bme280"]})
+    assert not res.get("is_error") and body(res)["output"].startswith("ok")
+    assert "install adafruit_bme280" in fake_circup.read_text()
+    libs = body(await tools["list_libraries"]({}))
+    assert libs[0]["name"] == "adafruit_bme280" and libs[0]["outdated"] is True
