@@ -99,3 +99,28 @@ def tool_handlers(monkeypatch):
         return built[-1]
 
     return build
+
+
+@pytest.fixture
+def sdk_run_tool(monkeypatch):
+    """The SDK's own run_tool for the boady server: input validation against the
+    published schema, the handler, and result shaping, exactly as a call from
+    Claude takes them (review 11)."""
+    import claude_agent_sdk
+
+    from boady import mcp_tools
+
+    captured = {}
+    real = claude_agent_sdk.build_tool_server
+
+    def capture(name, version, tools, run_tool):
+        captured["run"] = run_tool
+        return real(name, version, tools, run_tool)
+
+    monkeypatch.setattr(claude_agent_sdk, "build_tool_server", capture)
+
+    def build(ctx, **kw):
+        mcp_tools.build_server(ctx, **kw)
+        return captured["run"]
+
+    return build
