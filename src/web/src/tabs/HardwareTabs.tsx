@@ -363,12 +363,15 @@ export function DeviceTab({ backend, hw }: { backend: Backend; hw: DeviceManager
         <NoHw />
       ) : (
         <>
+          <EmulatorSection backend={backend} dm={dm} />
           <section>
             <div className="button-row">
-              <button className="btn primary" onClick={() => dm.requestBoard()}>
-                {t("device.connect")}
-              </button>
-              {dm.attached && st?.project?.type === "circuitpython" && !dm.conns.data && (
+              {dm.caps.serial && (
+                <button className="btn primary" onClick={() => dm.requestBoard()}>
+                  {t("device.connect")}
+                </button>
+              )}
+              {dm.attached && !dm.emulated && st?.project?.type === "circuitpython" && !dm.conns.data && (
                 <button className="btn" onClick={() => dm.requestDataPort()}>
                   {t("device.addData")}
                 </button>
@@ -380,7 +383,7 @@ export function DeviceTab({ backend, hw }: { backend: Backend; hw: DeviceManager
               )}
             </div>
           </section>
-          {st?.project?.type === "circuitpython" && dm.caps.msc && (
+          {st?.project?.type === "circuitpython" && dm.caps.msc && !dm.emulated && (
             <section>
               <h3>{t("device.drive")}</h3>
               <p className="muted small">{t("device.mscHelp")}</p>
@@ -408,5 +411,60 @@ export function DeviceTab({ backend, hw }: { backend: Backend; hw: DeviceManager
         </>
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ Emulator (testing only)
+function EmulatorSection({ backend, dm }: { backend: Backend; dm: DeviceManager }) {
+  const { t, lang } = useI18n();
+  const type = backend.state?.project?.type;
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  if (!type || (dm.attached && !dm.emulated)) return null;
+
+  const run = async (fn: () => Promise<void>, done?: string) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await fn();
+      if (done) setNote(done);
+    } catch (e: any) {
+      setNote(translateError(lang, e.message));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const emu = () => import("../hw/emulator/browser"); // loaded only when used
+
+  return (
+    <section className="card emulator">
+      <div className="card-body">
+        <h3>{t("emu.title")}</h3>
+        <p className="muted small">{t("emu.help")}</p>
+        {dm.emulated && <div className="kv"><span className="muted">{t("emu.running")}</span><span>{dm.emulated.firmware}</span></div>}
+        {note && <div className="notice">{note}</div>}
+      </div>
+      <div className="card-actions">
+        {dm.emulated ? (
+          <button className="btn" disabled={busy} onClick={() => run(() => dm.disconnect(false))}>
+            {t("emu.stop")}
+          </button>
+        ) : (
+          <>
+            <button className="btn primary" disabled={busy} onClick={() => run(async () => dm.connectEmulator(await (await emu()).startEmulator(type)))}>
+              {t("emu.start", { runtime: t(`type.${type}` as any) })}
+            </button>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => window.confirm(t("emu.confirmReset")) && run(async () => (await emu()).resetEmulatorStorage(type), t("emu.resetDone"))}
+            >
+              {t("emu.reset")}
+            </button>
+          </>
+        )}
+        {busy && <span className="spinner" />}
+      </div>
+    </section>
   );
 }

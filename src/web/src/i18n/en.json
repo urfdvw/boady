@@ -194,5 +194,14 @@
   "err.identify_failed": "Could not identify the board.",
   "library.mipNote": "MicroPython packages come from micropython.org (mip); you can also install github:org/repo or a URL directly.",
   "err.index_unavailable": "Could not load the package index.",
-  "err.not_installed": "Not installed."
+  "err.not_installed": "Not installed.",
+  "emu.title": "Emulator (testing only)",
+  "emu.help": "A virtual Raspberry Pi Pico running the official firmware, for trying boady without a board. No real pins, no CIRCUITPY drive, slower than a real Pico. Its files and UID are kept in this browser.",
+  "emu.start": "Start emulator ({runtime})",
+  "emu.stop": "Stop emulator",
+  "emu.running": "Running",
+  "emu.reset": "Reset emulator storage",
+  "emu.confirmReset": "Erase the emulator's files? It will start with an empty filesystem.",
+  "emu.resetDone": "Emulator storage reset.",
+  "emu.label": "emulator"
 }

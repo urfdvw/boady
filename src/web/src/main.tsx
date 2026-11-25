@@ -1,7 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { NoHardware } from "./adapters/hardware";
 import { DeviceManager } from "./hw/device";
 import { WebSocketConnection, defaultWsUrl } from "./adapters/websocket";
 import { Backend, loadToken, saveToken } from "./backend";
@@ -14,10 +13,11 @@ if (m) {
   history.replaceState(null, "", location.pathname + location.search);
 }
 
-const hw = "serial" in navigator ? new DeviceManager() : null;
-const backend = new Backend(new WebSocketConnection(defaultWsUrl()), hw ?? new NoHardware(), loadToken());
+// DeviceManager also runs without Web Serial: then only the testing-only emulator is available.
+const hw = new DeviceManager();
+const backend = new Backend(new WebSocketConnection(defaultWsUrl()), hw, loadToken());
 backend.start();
-hw?.init().catch((e) => console.warn("hardware init failed", e));
+hw.init().catch((e) => console.warn("hardware init failed", e));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

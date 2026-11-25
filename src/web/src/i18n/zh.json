@@ -194,5 +194,14 @@
   "err.identify_failed": "无法识别板子。",
   "library.mipNote": "MicroPython 的包来自 micropython.org（mip）；也可以直接安装 github:org/repo 或网址。",
   "err.index_unavailable": "无法加载包索引。",
-  "err.not_installed": "未安装。"
+  "err.not_installed": "未安装。",
+  "emu.title": "模拟器（仅供测试）",
+  "emu.help": "运行官方固件的虚拟 Raspberry Pi Pico，用于没有板子时试用 boady。没有真实引脚，没有 CIRCUITPY 盘，比真实 Pico 慢。它的文件和 UID 保存在这个浏览器里。",
+  "emu.start": "启动模拟器（{runtime}）",
+  "emu.stop": "停止模拟器",
+  "emu.running": "运行中",
+  "emu.reset": "清空模拟器存储",
+  "emu.confirmReset": "清空模拟器里的文件？它将以空文件系统启动。",
+  "emu.resetDone": "模拟器存储已清空。",
+  "emu.label": "模拟器"
 }

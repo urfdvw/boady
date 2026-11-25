@@ -130,7 +130,7 @@ export function ChatTab({ backend }: { backend: Backend }) {
     setDraft("");
   };
 
-  const device = st?.device.attached ? t("common.connected") : t("common.notConnected");
+  const device = !st?.device.attached ? t("common.notConnected") : st.device.usb?.emulator ? t("emu.label") : t("common.connected");
 
   return (
     <div className="tab-page chat">
