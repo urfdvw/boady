@@ -203,5 +203,6 @@
   "emu.reset": "清空模拟器存储",
   "emu.confirmReset": "清空模拟器里的文件？它将以空文件系统启动。",
   "emu.resetDone": "模拟器存储已清空。",
-  "emu.label": "模拟器"
+  "emu.label": "模拟器",
+  "err.emulator_failed": "模拟器出错（固件或后台线程出错）。请重试，或清空模拟器存储。"
 }

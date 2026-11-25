@@ -12,42 +12,101 @@ export const FIRMWARE: Record<Runtime, { file: string; label: string }> = {
   circuitpython: { file: "circuitpython-raspberry_pi_pico-10.3.2.uf2", label: "CircuitPython 10.3.2" },
 };
 
-class WorkerHost implements PicoHost {
-  onData: (b: Uint8Array) => void = () => {};
-  private readyP: Promise<void>;
-  private nextId = 1;
-  private waits = new Map<number, (f: Uint8Array) => void>();
+/** The part of a Worker that WorkerHost uses (a real Worker, or a fake in tests). */
+export interface WorkerLike {
+  postMessage(msg: unknown, transfer?: Transferable[]): void;
+  terminate(): void;
+  onmessage: ((e: MessageEvent) => void) | null;
+  onerror: ((e: ErrorEvent) => void) | null;
+  onmessageerror: ((e: MessageEvent) => void) | null;
+}
 
-  constructor(private w: Worker) {
-    let ready = () => {};
-    this.readyP = new Promise((r) => (ready = r));
+/**
+ * Talks to pico.worker.ts. Every wait can fail: a Worker error, an error
+ * reported by the Worker, or a timeout rejects it, and a crash while running
+ * calls onLost (like an unplugged board).
+ */
+export class WorkerHost implements PicoHost {
+  onData: (b: Uint8Array) => void = () => {};
+  onLost: () => void = () => {};
+  private readyP: Promise<void>;
+  private readyRes!: () => void;
+  private readyRej!: (e: Error) => void;
+  private nextId = 1;
+  private waits = new Map<number, { res: (f: Uint8Array) => void; rej: (e: Error) => void }>();
+  private dead: Error | null = null;
+  private started = false;
+
+  constructor(
+    private w: WorkerLike,
+    private timeouts = { readyMs: 60000, flashMs: 20000 },
+  ) {
+    this.readyP = new Promise((res, rej) => ((this.readyRes = res), (this.readyRej = rej)));
+    this.readyP.catch(() => {}); // observed via ready()
     w.onmessage = (e) => {
       const m = e.data;
       if (m.type === "data") this.onData(m.bytes);
-      else if (m.type === "ready") ready();
-      else if (m.type === "flash") {
-        this.waits.get(m.id)?.(m.flash);
+      else if (m.type === "ready") {
+        this.started = true;
+        this.readyRes();
+      } else if (m.type === "flash") {
+        this.waits.get(m.id)?.res(m.flash);
         this.waits.delete(m.id);
-      }
+      } else if (m.type === "error") this.fail(new Error(`emulator_failed: ${m.message}`));
     };
+    w.onerror = (e) => this.fail(new Error(`emulator_failed: ${e.message || "worker error"}`));
+    w.onmessageerror = () => this.fail(new Error("emulator_failed: unreadable message from the worker"));
   }
+
+  private fail(err: Error) {
+    if (this.dead) return;
+    this.dead = err;
+    this.readyRej(err);
+    for (const w of this.waits.values()) w.rej(err);
+    this.waits.clear();
+    if (this.started) this.onLost();
+  }
+
   write(b: Uint8Array) {
-    this.w.postMessage({ type: "write", bytes: b });
+    if (!this.dead) this.w.postMessage({ type: "write", bytes: b });
   }
-  ready() {
-    return this.readyP;
+
+  ready(): Promise<void> {
+    return withTimeout(this.readyP, this.timeouts.readyMs, "emulator_failed: the firmware did not start");
   }
-  flash() {
+
+  flash(): Promise<Uint8Array> {
+    if (this.dead) return Promise.reject(this.dead);
     const id = this.nextId++;
-    return new Promise<Uint8Array>((r) => {
-      this.waits.set(id, r);
-      this.w.postMessage({ type: "flash", id });
-    });
+    const p = new Promise<Uint8Array>((res, rej) => this.waits.set(id, { res, rej }));
+    this.w.postMessage({ type: "flash", id });
+    return withTimeout(p, this.timeouts.flashMs, "emulator_failed: no flash image from the worker").finally(() => this.waits.delete(id));
   }
+
   stop() {
-    this.w.postMessage({ type: "stop" });
+    try {
+      this.w.postMessage({ type: "stop" });
+    } catch {
+      /* already gone */
+    }
     setTimeout(() => this.w.terminate(), 100);
   }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([p, new Promise<T>((_, rej) => (timer = setTimeout(() => rej(new Error(message)), ms)))]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+/** A UF2 starts with its block magic; anything else (an error page, a truncated file) is refused. */
+export function checkFirmware(bytes: Uint8Array, name: string): Uint8Array {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 512 || bytes.length % 512 !== 0 || v.getUint32(0, true) !== 0x0a324655 || v.getUint32(4, true) !== 0x9e5d5157) {
+    throw new Error(`emulator_failed: ${name} is not a UF2 firmware image`);
+  }
+  return bytes;
 }
 
 // ---- IndexedDB: { flash, uid } per runtime ----
@@ -103,11 +162,18 @@ export async function startEmulator(rt: Runtime): Promise<EmulatorLink> {
   const fw = FIRMWARE[rt];
   const saved = (await load(rt)) ?? { flash: null, uid: randomUid() };
   await store(rt, saved);
-  const firmware = new Uint8Array(await (await fetch(`./emulator/firmware/${fw.file}`)).arrayBuffer());
+  const res = await fetch(`./emulator/firmware/${fw.file}`);
+  if (!res.ok) throw new Error(`emulator_failed: firmware download returned HTTP ${res.status}`);
+  const firmware = checkFirmware(new Uint8Array(await res.arrayBuffer()), fw.file);
   const worker = new Worker(new URL("./pico.worker.ts", import.meta.url), { type: "module" });
   const host = new WorkerHost(worker);
   const flash = saved.flash && saved.flash.length === FLASH_SIZE ? saved.flash : null;
   worker.postMessage({ type: "start", firmware, flash, uid: saved.uid });
-  await host.ready();
+  try {
+    await host.ready();
+  } catch (e) {
+    host.stop();
+    throw e;
+  }
   return new EmulatorLink(host, { runtime: rt, firmware: fw.label }, (f) => store(rt, { flash: f, uid: saved.uid }));
 }

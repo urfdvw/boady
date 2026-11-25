@@ -8,6 +8,8 @@ import { PicoMachine } from "./pico";
 /** Where the emulated Pico runs. */
 export interface PicoHost {
   onData: (b: Uint8Array) => void;
+  /** The emulator died while running (e.g. the Worker crashed). */
+  onLost?: () => void;
   write(b: Uint8Array): void;
   /** Resolves once the firmware's USB serial port is up. */
   ready(): Promise<void>;
@@ -49,6 +51,11 @@ export class EmulatorLink implements SerialLink {
     private save: (flash: Uint8Array) => Promise<void> = async () => {},
   ) {
     host.onData = (b) => this.onData(b);
+    host.onLost = () => {
+      if (this.closed) return;
+      this.closed = true;
+      this.onLost();
+    };
   }
 
   async write(b: Uint8Array): Promise<void> {
@@ -58,15 +65,23 @@ export class EmulatorLink implements SerialLink {
 
   /** Persist the current flash (e.g. after a sync). */
   async checkpoint(): Promise<void> {
-    if (!this.closed) await this.save(await this.host.flash());
-  }
-
-  async close(): Promise<void> {
     if (this.closed) return;
     try {
       await this.save(await this.host.flash());
+    } catch {
+      /* a failed checkpoint must not fail the sync that triggered it */
+    }
+  }
+
+  /** Saves the flash if the emulator still answers; always stops it. */
+  async close(): Promise<void> {
+    const wasOpen = !this.closed;
+    this.closed = true;
+    try {
+      if (wasOpen) await this.save(await this.host.flash());
+    } catch {
+      /* emulator already broken: nothing to save */
     } finally {
-      this.closed = true;
       this.host.stop();
     }
   }

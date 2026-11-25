@@ -203,5 +203,6 @@
   "emu.reset": "Reset emulator storage",
   "emu.confirmReset": "Erase the emulator's files? It will start with an empty filesystem.",
   "emu.resetDone": "Emulator storage reset.",
-  "emu.label": "emulator"
+  "emu.label": "emulator",
+  "err.emulator_failed": "The emulator failed (firmware or worker error). Try again, or reset the emulator storage."
 }

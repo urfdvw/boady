@@ -8,10 +8,14 @@ self.onmessage = (e: MessageEvent) => {
   const m = e.data;
   switch (m.type) {
     case "start":
-      pico = new PicoMachine({ firmware: m.firmware, flash: m.flash ?? undefined, uid: m.uid });
-      pico.onData = (b) => self.postMessage({ type: "data", bytes: b }, [b.buffer]);
-      pico.onConnected = () => self.postMessage({ type: "ready" });
-      pico.start();
+      try {
+        pico = new PicoMachine({ firmware: m.firmware, flash: m.flash ?? undefined, uid: m.uid });
+        pico.onData = (b) => self.postMessage({ type: "data", bytes: b }, [b.buffer]);
+        pico.onConnected = () => self.postMessage({ type: "ready" });
+        pico.start();
+      } catch (e) {
+        self.postMessage({ type: "error", message: String((e as Error)?.message || e) });
+      }
       break;
     case "write":
       pico?.write(m.bytes);
