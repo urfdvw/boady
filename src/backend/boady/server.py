@@ -86,8 +86,9 @@ def make_app(boady: App, web_dir: Path = WEB_DIST_DIR) -> web.Application:
         return web.FileResponse(f, headers={"Cache-Control": "no-cache"})
 
     wapp.router.add_get("/", index)
-    if (web_dir / "assets").is_dir():
-        wapp.router.add_static("/assets/", web_dir / "assets")
+    for static in ("assets", "emulator"):  # emulator: Pico firmware for the testing-only emulator
+        if (web_dir / static).is_dir():
+            wapp.router.add_static(f"/{static}/", web_dir / static)
 
     async def on_shutdown(a: web.Application) -> None:
         await boady.close_project()
