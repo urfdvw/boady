@@ -18,7 +18,7 @@ The `boady` MCP tools reach the board through the user's frontend:
 
 - `sync_from_device` — pull board files into `src/`: all of them, or only `paths` (the other mirror files stay untouched). The result is left in the git working tree; the user decides to commit or reset. If `src/` has uncommitted changes the user is asked first; if they refuse you get "User declined."
 - `compare_with_device` — read the board into a buffer and compare it with the mirror and with the board's state after the last pull or upload. Returns `changed_on_board`, `board_only`, `mirror_only`, `differs` and short `diffs`. Never changes the mirror.
-- `sync_to_device` — make the board equal to `src/` (changed files written, extra files deleted). Needs approval.
+- `sync_to_device` — make the board equal to `src/` (changed files written, extra files deleted). Needs approval. Its `since` is the REPL cursor from before the sync; read what the board prints afterwards with it.
 - `write_repl` / `write_data` — write text to the REPL / data serial port. Use the escapes `\x01`–`\x04` for Ctrl-A–Ctrl-D (`\x03` interrupts the running program, `\x04` soft-reboots or ends raw/paste mode). Returns `{"cursor": N}`, the stream position at write time.
 - `read_repl` / `read_data` — read serial history: `since` (cursor), `tail` (last N lines), `wait_for` (text) with `timeout_ms`. Returns `{"text", "cursor", "start", "truncated", "matched"}`. Reading never clears history.
 - `install_library` (`names`) / `list_libraries` — install into / list the mirror's `src/lib` (circup for CircuitPython, mip for MicroPython). Libraries reach the board with the next `sync_to_device`.

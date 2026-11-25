@@ -346,6 +346,35 @@ async def test_upload_uses_one_snapshot_for_plan_transfer_and_baseline(env, boar
     assert app.get_baseline()["code.py"] == mcp_tools.sync.sha256(b"A")
 
 
+async def test_upload_returns_the_repl_cursor_before_the_sync(env, board):
+    """Review 7, prompt finding 2: after a CircuitPython serial sync the frontend sends
+    Ctrl-D itself; the agent needs a cursor so an older Traceback is not taken as new."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "cur", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"A0"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    old = b"Traceback (most recent call last):\r\nNameError: old\r\nCode done running.\r\n"
+    await ws.send({"type": "serial.data", "port": "repl", "b64": base64.b64encode(old).decode()})
+    while app.bridge.buffers["repl"].end < len(old):
+        await asyncio.sleep(0.01)
+    (app.project.path / "src" / "code.py").write_text("A")
+    task = asyncio.create_task(mcp_tools.push_to_device(app.tool_ctx))
+    plan = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.plan", timeout=10)
+    await ws.send({"type": "hw.response", "id": plan["id"], "ok": True, "result": {"need": ["code.py"], "delete": []}})
+    apply = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.apply", timeout=10)
+    new = b"[boady: sync finished]\r\nsoft reboot\r\nhello\r\nCode done running.\r\n"
+    await ws.send({"type": "serial.data", "port": "repl", "b64": base64.b64encode(new).decode()})
+    await ws.send({"type": "hw.response", "id": apply["id"], "ok": True, "result": {"written": ["code.py"], "deleted": [], "restarted": True}})
+    out = await task
+    assert out["restarted"] is True
+    r = await app.bridge.buffers["repl"].read(since=out["since"], wait_for="Code done running.", timeout_ms=1000)
+    assert r.matched and "hello" in r.text and "NameError" not in r.text
+
+
 async def test_pull_selected_paths_keeps_local_edits(env, board):
     """Review 3, finding 4: keeping the board's data.txt must not overwrite the local code.py fix."""
     from boady import mcp_tools

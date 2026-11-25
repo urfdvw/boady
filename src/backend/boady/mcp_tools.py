@@ -192,8 +192,11 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     need = [p for p in plan.get("need", []) if p in snap]
     delete = [p for p in plan.get("delete", []) if not sync.excluded(p)]
     files = {rel: base64.b64encode(snap[rel]).decode() for rel in need}
+    # The REPL position before the transfer: everything after it is the sync markers and
+    # what the board prints after it (the reload the frontend triggers), never older output.
+    since = ctx.bridge.buffers["repl"].end
     res = await ctx.bridge.request("fs.apply", {"files": files, "delete": delete}, timeout=600) or {}
-    out = {"written": res.get("written", need), "deleted": res.get("deleted", delete)}
+    out = {"written": res.get("written", need), "deleted": res.get("deleted", delete), "since": since}
     for k in ("channel", "restarted", "note"):
         if k in res:
             out[k] = res[k]
@@ -299,7 +302,12 @@ def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bo
             return _err(USER_DECLINED)
         return _ok(res)
 
-    @tool("sync_to_device", "Sync the mirror src/ to the board (writes changed files, deletes extra ones).", {"type": "object", "properties": {}})
+    @tool(
+        "sync_to_device",
+        "Sync the mirror src/ to the board (writes changed files, deletes extra ones). The result's `since` is the "
+        "REPL cursor before the sync: read the board's output after it with read_repl(since=...).",
+        {"type": "object", "properties": {}},
+    )
     async def sync_to_device(args):
         try:
             return _ok(await push_to_device(ctx))

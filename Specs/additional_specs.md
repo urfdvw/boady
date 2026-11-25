@@ -47,7 +47,7 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 - `read_repl` / `read_data {since?, tail?, wait_for?, timeout_ms?}` → `{text, cursor, start, truncated, matched}`. `cursor` = position after the returned text; `truncated` = requested bytes were already evicted; `matched` = `null` without `wait_for`. `wait_for` only looks at text after `since`.
 - `write_repl` / `write_data {data}` → `{cursor}` (stream position at write time). Literal `\x01`–`\x04` in `data` become Ctrl-A–D; real control characters pass through.
 - `sync_from_device {}` → `{added[], modified[], deleted[]}` or error `User declined.`
-- `sync_to_device {}` → `{written[], deleted[]}`.
+- `sync_to_device {}` → `{written[], deleted[], since, channel?, restarted?, note?}`. `since` = the REPL cursor taken right before `fs.apply` (review 7): the frontend's own Ctrl-D after a CircuitPython serial sync gives the agent no write cursor, so it reads the restarted program's output from `since`.
 - Not connected → `Device not connected.`; missing data port → a message explaining `usb_cdc.enable(console=True, data=True)`.
 
 **D8 — Serial write lock.** The agent takes a port's write lock at its first write and keeps it until the turn ends or is interrupted, so the user cannot type into the middle of a test sequence. `state.serial.lock` tells the console to go read-only.
