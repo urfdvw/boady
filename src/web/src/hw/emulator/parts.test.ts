@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import {
+  DEFAULT_PARTS,
+  HEADER_GPIOS,
+  LEFT_PINS,
+  MAX_SCALE,
+  RIGHT_PINS,
+  driveOf,
+  isLit,
+  pinch,
+  readParts,
+  zoomAt,
+} from "./parts";
+
+describe("emulator tab parts (D42)", () => {
+  it("has the Pico's 40 header pins with GP0–GP22 and GP26–GP28", () => {
+    expect([...LEFT_PINS, ...RIGHT_PINS].map((p) => p.n).sort((a, b) => a - b)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+    expect(HEADER_GPIOS).toEqual([...Array.from({ length: 23 }, (_, i) => i), 26, 27, 28]);
+    expect(LEFT_PINS[0]).toEqual({ n: 1, label: "GP0", gpio: 0 });
+    expect(RIGHT_PINS[0]).toEqual({ n: 40, label: "VBUS", gpio: null });
+    expect(RIGHT_PINS[19]).toEqual({ n: 21, label: "GP16", gpio: 16 });
+  });
+
+  it("LEDs light on high or on low; buttons drive their level or nothing", () => {
+    expect(isLit(DEFAULT_PARTS, true)).toBe(true);
+    expect(isLit({ ...DEFAULT_PARTS, led: "activeLow" }, true)).toBe(false);
+    expect(isLit({ ...DEFAULT_PARTS, led: "activeLow" }, false)).toBe(true);
+    expect(driveOf(DEFAULT_PARTS, true)).toBe(false); // default: a button to GND
+    expect(driveOf({ ...DEFAULT_PARTS, drive: "high" }, true)).toBe(true);
+    expect(driveOf({ ...DEFAULT_PARTS, drive: "high" }, false)).toBeNull(); // released: the pull decides
+  });
+
+  it("reads saved options defensively", () => {
+    expect(readParts({ 3: { button: "toggle", drive: "high", led: "activeLow" } })).toEqual({
+      3: { button: "toggle", drive: "high", led: "activeLow" },
+    });
+    expect(readParts({ 3: { button: "weird" }, 25: DEFAULT_PARTS, 99: DEFAULT_PARTS, x: 1 })).toEqual({ 3: DEFAULT_PARTS });
+    expect(readParts(null)).toEqual({});
+    expect(readParts("garbage")).toEqual({});
+  });
+
+  it("pinch keeps the point between the fingers in place", () => {
+    const start = { scale: 1, x: 0, y: 0 };
+    // fingers 100 px apart around (100, 100) spread to 200 px: twice as big, (100, 100) stays
+    const v = pinch(start, { x: 50, y: 100 }, { x: 150, y: 100 }, { x: 0, y: 100 }, { x: 200, y: 100 });
+    expect(v.scale).toBe(2);
+    expect({ x: (100 - v.x) / v.scale, y: (100 - v.y) / v.scale }).toEqual({ x: 100, y: 100 });
+    // dragging both fingers pans
+    const p = pinch(start, { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 30, y: 40 }, { x: 130, y: 40 });
+    expect(p).toEqual({ scale: 1, x: 30, y: 40 });
+    // clamped
+    expect(pinch(start, { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 0 }, { x: 1000, y: 0 }).scale).toBe(MAX_SCALE);
+  });
+
+  it("zooms around a point", () => {
+    const v = zoomAt({ scale: 1, x: 10, y: 10 }, 2, { x: 110, y: 60 });
+    expect(v.scale).toBe(2);
+    expect((110 - v.x) / v.scale).toBe(100);
+    expect((60 - v.y) / v.scale).toBe(50);
+  });
+});

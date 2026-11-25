@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialTabs, sanitize, selectOne, selectTwo, selectWithModifier } from "./tabs";
+import { initialTabs, sanitize, selectOne, selectTwo, selectWithModifier, visibleOpen } from "./tabs";
 
 describe("tab rules", () => {
   it("single click opens only that tab and leaves split", () => {
@@ -44,6 +44,16 @@ describe("tab rules", () => {
     expect(sanitize(null)).toEqual(initialTabs());
     const s = sanitize({ open: ["plot", "bogus", "chat"], recent: ["plot"] });
     expect(s.open).toEqual(["chat", "plot"]);
-    expect(s.recent).toHaveLength(8);
+    expect(s.recent).toHaveLength(9);
+  });
+
+  it("hides the Emulator tab outside test projects (D42)", () => {
+    let s = selectTwo(initialTabs(), "serial", "emulator");
+    expect(s.open).toEqual(["serial", "emulator"]);
+    expect(visibleOpen(s, ["emulator"])).toEqual(["serial"]);
+    expect(visibleOpen(selectOne(s, "emulator"), ["emulator"])).toEqual(["chat"]);
+    // Ctrl-click never opens a hidden tab even if it was selected recently
+    s = selectWithModifier(s, "files", ["emulator"]);
+    expect(s.open).toEqual(["files", "serial"]);
   });
 });

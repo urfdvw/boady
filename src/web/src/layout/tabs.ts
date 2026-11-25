@@ -8,7 +8,7 @@
  * are always shown in fixed tab order (at most two).
  */
 
-export const TAB_IDS = ["chat", "files", "version", "serial", "plot", "library", "device", "settings"] as const;
+export const TAB_IDS = ["chat", "files", "version", "serial", "plot", "library", "device", "emulator", "settings"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
 export interface TabState {
@@ -31,10 +31,18 @@ export function selectTwo(s: TabState, a: TabId, b: TabId): TabState {
   return { open: order([a, b]), recent: touch(touch(s.recent, a), b) };
 }
 
-export function selectWithModifier(s: TabState, tab: TabId): TabState {
-  if (s.open.length === 1 && s.open[0] === tab) return s;
+/** ``hidden``: tabs not shown right now (the Emulator tab outside test projects). */
+export function selectWithModifier(s: TabState, tab: TabId, hidden: readonly TabId[] = []): TabState {
+  const shown = visibleOpen(s, hidden);
+  if (shown.length === 1 && shown[0] === tab) return s;
   const recent = touch(s.recent, tab);
-  return { open: order(recent.slice(0, 2)), recent };
+  return { open: order(recent.filter((t) => !hidden.includes(t)).slice(0, 2)), recent };
+}
+
+/** The open tabs that can be shown; Chat if none is left (D42: the Emulator tab can disappear). */
+export function visibleOpen(s: TabState, hidden: readonly TabId[]): TabId[] {
+  const open = s.open.filter((t) => !hidden.includes(t));
+  return open.length ? open : ["chat"];
 }
 
 export function sanitize(s: unknown): TabState {

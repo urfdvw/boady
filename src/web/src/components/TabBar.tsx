@@ -1,4 +1,4 @@
-import { ChartLine, Cpu, FolderTree, GitBranch, Library, MessageSquare, Settings, Terminal } from "lucide-react";
+import { ChartLine, CircuitBoard, Cpu, FolderTree, GitBranch, Library, MessageSquare, Settings, Terminal } from "lucide-react";
 import { useRef } from "react";
 import type { ComponentType } from "react";
 import { useI18n } from "../i18n";
@@ -12,11 +12,14 @@ export const TAB_ICONS: Record<TabId, ComponentType<{ size?: number }>> = {
   plot: ChartLine,
   library: Library,
   device: Cpu,
+  emulator: CircuitBoard,
   settings: Settings,
 };
 
 interface Props {
   open: TabId[];
+  /** Tabs not shown right now (D42: the Emulator tab outside test projects). */
+  hidden?: readonly TabId[];
   landscape: boolean;
   badge: Partial<Record<TabId, boolean>>;
   onSelect(tab: TabId): void;
@@ -24,7 +27,7 @@ interface Props {
   onSelectTwo(a: TabId, b: TabId): void;
 }
 
-export function TabBar({ open, landscape, badge, onSelect, onSelectModifier, onSelectTwo }: Props) {
+export function TabBar({ open, hidden = [], landscape, badge, onSelect, onSelectModifier, onSelectTwo }: Props) {
   const { t } = useI18n();
   const twoFinger = useRef(false);
 
@@ -57,7 +60,7 @@ export function TabBar({ open, landscape, badge, onSelect, onSelectModifier, onS
 
   return (
     <nav className={`tabbar ${landscape ? "tabbar-top" : "tabbar-left"}`} onTouchStart={onTouchStart} role="tablist">
-      {TAB_IDS.map((id) => {
+      {TAB_IDS.filter((id) => !hidden.includes(id)).map((id) => {
         const Icon = TAB_ICONS[id];
         const active = open.includes(id);
         return (

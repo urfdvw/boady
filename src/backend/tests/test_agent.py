@@ -35,7 +35,7 @@ async def test_test_project_prompt_describes_the_emulator(project):
     # the first connection writes the board kind after the session object exists
     projects.write_board(project.path, "rp2040js")
     append = s.build_options().system_prompt["append"]
-    assert "emulated Raspberry Pi Pico" in append and "Nothing is wired to it" in append
+    assert "emulated Raspberry Pi Pico" in append and "Emulator tab" in append
     projects.write_board(project.path, "usb")
     assert "emulated Raspberry Pi Pico" not in s.build_options().system_prompt["append"]
 

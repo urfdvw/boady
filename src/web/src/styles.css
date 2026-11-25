@@ -821,3 +821,167 @@ code {
   color: #7a5200;
   margin-left: 6px;
 }
+
+/* ---- Emulator tab (D42) ---- */
+.emu-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.emu-toolbar,
+.emu-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.emu-toolbar .spacer {
+  flex: 1;
+}
+.emu-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+.emu-status.on {
+  color: var(--ok);
+}
+.emu-choice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.emu-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  background: var(--panel-2);
+  cursor: grab;
+}
+.emu-canvas {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+.emu-canvas svg {
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.emu-off {
+  opacity: 0.55;
+}
+.emu-hint {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.emu-pcb {
+  fill: #1f7a4c;
+  stroke: #155a37;
+  stroke-width: 2;
+}
+.emu-metal {
+  fill: #b9bec6;
+  stroke: #8a9099;
+}
+.emu-bootsel {
+  fill: #f2f2f2;
+}
+.emu-chip {
+  fill: #23262b;
+}
+.emu-chip-text {
+  fill: #c9ccd1;
+  font-size: 13px;
+  font-family: ui-monospace, monospace;
+}
+.emu-silk {
+  fill: #e8f3ec;
+  font-size: 11px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.emu-pad {
+  fill: #d4b35a;
+}
+.emu-hole {
+  fill: #0d2a1b;
+}
+.emu-label {
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  fill: var(--muted);
+  /* a halo in the background color hides the wire behind the label */
+  paint-order: stroke;
+  stroke: var(--panel-2);
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+.emu-label.gpio {
+  fill: var(--text);
+  cursor: pointer;
+}
+.emu-label.gpio.out {
+  font-weight: 700;
+}
+.emu-label.gpio.selected {
+  fill: var(--accent);
+  text-decoration: underline;
+}
+.emu-label.gnd {
+  fill: var(--muted);
+  font-style: italic;
+}
+.emu-wire {
+  stroke: var(--border);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.emu-led {
+  fill: #4a2222;
+  stroke: #2a1414;
+  stroke-width: 1.5;
+}
+.emu-led.lit {
+  fill: #ff4a3d;
+  stroke: #ffb1aa;
+  filter: drop-shadow(0 0 4px #ff4a3d);
+}
+.emu-led-smd {
+  fill: #e9edf0;
+}
+.emu-led-smd.lit {
+  fill: #6fe36f;
+  filter: drop-shadow(0 0 5px #6fe36f);
+}
+.emu-btn {
+  cursor: pointer;
+  outline: none;
+}
+.emu-btn rect {
+  fill: var(--panel);
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+.emu-btn text {
+  font-size: 11px;
+  fill: var(--muted);
+  font-family: ui-monospace, monospace;
+  pointer-events: none;
+}
+.emu-btn.down rect {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.emu-btn.down text {
+  fill: var(--accent-text);
+}
+.emu-btn:focus-visible rect {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}

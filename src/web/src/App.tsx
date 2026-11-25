@@ -4,13 +4,14 @@ import type { DeviceManager } from "./hw/device";
 import { SplitView } from "./components/SplitView";
 import { TabBar } from "./components/TabBar";
 import { I18nContext, translate, type Lang } from "./i18n";
-import { initialTabs, sanitize, selectOne, selectTwo, selectWithModifier, type TabId, type TabState } from "./layout/tabs";
+import { initialTabs, sanitize, selectOne, selectTwo, selectWithModifier, visibleOpen, type TabId, type TabState } from "./layout/tabs";
 import { useViewport } from "./layout/viewport";
 import { Onboarding } from "./pages/Onboarding";
 import { Offline, Pairing } from "./pages/Status";
 import { ChatTab } from "./tabs/ChatTab";
 import { FilesTab } from "./tabs/FilesTab";
-import { DeviceTab, LibraryTab, PlotTab, SerialTab } from "./tabs/HardwareTabs";
+import { EmulatorTab } from "./tabs/EmulatorTab";
+import { DeviceTab, LibraryTab, PlotTab, SerialTab, useDevice } from "./tabs/HardwareTabs";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { VersionTab } from "./tabs/VersionTab";
 
@@ -36,6 +37,7 @@ function store(key: string, value: unknown) {
 
 export function App({ backend: b, hw }: { backend: Backend; hw: DeviceManager | null }) {
   const backend = useBackend(b);
+  const dm = useDevice(hw);
   const { landscape, keyboard } = useViewport();
   const [tabs, setTabs] = useState<TabState>(() => sanitize(load(TABS_KEY, initialTabs())));
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -62,7 +64,10 @@ export function App({ backend: b, hw }: { backend: Backend; hw: DeviceManager | 
 
   const connected = backend.status === "connected" && backend.state !== null;
   const onboarding = connected && (!backend.state!.project || showOnboarding || !!backend.selectRequired);
-  const chatVisible = connected && !onboarding && tabs.open.includes("chat");
+  // D42: the Emulator tab exists for test projects and while the emulator is connected
+  const hidden: TabId[] = backend.state?.project?.board === "rp2040js" || dm?.emulated ? [] : ["emulator"];
+  const shown = visibleOpen(tabs, hidden);
+  const chatVisible = connected && !onboarding && shown.includes("chat");
 
   useEffect(() => {
     backend.setChatVisible(chatVisible);
@@ -96,6 +101,8 @@ export function App({ backend: b, hw }: { backend: Backend; hw: DeviceManager | 
           return <LibraryTab backend={backend} />;
         case "device":
           return <DeviceTab backend={backend} hw={hw} />;
+        case "emulator":
+          return <EmulatorTab backend={backend} hw={hw} />;
         case "settings":
           return <SettingsTab backend={backend} onOpenOnboarding={() => setShowOnboarding(true)} onLanguage={setLanguage} />;
       }
@@ -104,15 +111,16 @@ export function App({ backend: b, hw }: { backend: Backend; hw: DeviceManager | 
     body = (
       <div className={`shell ${landscape ? "shell-landscape" : "shell-portrait"}`}>
         <TabBar
-          open={tabs.open}
+          open={shown}
+          hidden={hidden}
           landscape={landscape}
           badge={badge}
           onSelect={(t) => update(selectOne(tabs, t))}
-          onSelectModifier={(t) => update(selectWithModifier(tabs, t))}
+          onSelectModifier={(t) => update(selectWithModifier(tabs, t, hidden))}
           onSelectTwo={(a, c) => update(selectTwo(tabs, a, c))}
         />
         <main className="content">
-          <SplitView panes={tabs.open.map((id) => <div key={id} className="pane-inner">{render(id)}</div>)} landscape={landscape} keyboard={keyboard} />
+          <SplitView panes={shown.map((id) => <div key={id} className="pane-inner">{render(id)}</div>)} landscape={landscape} keyboard={keyboard} />
         </main>
       </div>
     );

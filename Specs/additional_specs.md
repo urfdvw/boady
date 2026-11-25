@@ -132,6 +132,14 @@ Phase 1 does not depend on any pre-check result (desktop, no hardware), so it wa
 
 **D41 — Names that differ only in case (reviews 5 and 6).** On a case-insensitive file system (macOS / Windows defaults; detected per mirror) a full pull refuses, before changing anything, a board whose files or directories differ only in case (`A.txt` and `a.txt`) — the mirror cannot hold both, and uploading the merged result would destroy one. A full pull deletes before it writes, so a local `Code.py` replaced by the board's `code.py` ends up as the board's file. A selective pull refuses a path that reaches an existing entry under another spelling (`CODE.PY` → `code.py`), on every file system.
 
+**D42 — Emulator tab: virtual LEDs and buttons on the Pico's GPIOs (Master, 2026-11-25; merged into specs.md).** A tab after Device, shown when the open project is a test project (`board: "rp2040js"`) or the emulator is connected.
+- Drawing: an original SVG of the Pico (not a photo), 40 header pins in their real order; every exposed GPIO (GP0–GP22, GP26–GP28) gets an LED and a button next to its pin; the on-board LED (GP25) is on the board. Power/GND/RUN/ADC_VREF pins are labels only.
+- LED = the pad's electrical level: the chip's output when the pin is an output, else what is applied from outside (a button) or, when nothing is, the pull resistor. Levels are sampled every 50 ms in the emulator and sent only when they change, so PWM shows a sampled level, not a brightness.
+- Button: pressed / switched on drives the pin high or low (per pin); released / off drives nothing (needs `releaseInput()`, a boady addition to the vendored rp2040js `GPIOPin`, so the pull decides again). If the chip drives the pin as an output, the output wins (as with a resistor in series).
+- Per-pin options: button momentary or toggle; button drives high or low; LED lit on high or on low. Defaults: momentary, drives low (a button to GND with a pull-up, the common wiring), LED lit on high. Kept per project in the browser (`localStorage`, a viewer convenience); toggled switches are re-applied when the emulator restarts.
+- Zoom: two-finger pinch and drag on touch screens; +/−/reset buttons and Ctrl+wheel on computers.
+- The agent's system prompt for a test project says the user can see the LEDs and press the buttons, so it may ask the user to press a button or read an LED, while printed output stays the main test.
+
 ## Pre-check checklist (needs Master)
 
 Record each result below. If any step fails, stop and report before phase 2. (Results: see the next section.)
@@ -216,3 +224,5 @@ Use a native-USB board (e.g. Raspberry Pi Pico / Pico W) and, if available, an E
 5. "Reset emulator storage", connect again: the firmware's empty filesystem is back.
 6. Open a real-board project while the emulator runs: the emulator is disconnected. Plug a real board while the test project is open: it is refused with `board_kind_mismatch`.
 7. Repeat 1–3 with a MicroPython project (soft reset with Ctrl-D runs `main.py`).
+8. Emulator tab (D42), MicroPython test project with the emulator connected: the tab appears after Device (and is absent in a real-board project). In the Serial tab run `from machine import Pin;o=Pin(15,Pin.OUT);o.value(1);i=Pin(14,Pin.IN,Pin.PULL_UP);Pin('LED',Pin.OUT).value(1)`: the LEDs of GP15 and GP14 and the on-board LED light up. Hold GP14's button: its LED goes dark and `i.value()` prints 0; release: 1. Set GP14 to Switch / drives high / LED lights on low and check each. Reload the page and reconnect: the options and a switched-on switch are back.
+9. On a phone or tablet (APK phase, or desktop Chrome's touch emulation): two-finger pinch zooms around the fingers and drags; a single finger on a button presses it without moving the board.
