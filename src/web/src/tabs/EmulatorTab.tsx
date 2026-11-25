@@ -377,6 +377,8 @@ function PinRow({ p, side, y, state, parts, active, selected, enabled, onSelect,
         }}
         onPointerCancel={onRelease}
         onLostPointerCapture={onRelease}
+        // the key can go up on another element after Tab moved the focus (review 9)
+        onBlur={onRelease}
         onKeyDown={(e) => {
           if (enabled && (e.key === " " || e.key === "Enter") && !e.repeat) {
             e.preventDefault();

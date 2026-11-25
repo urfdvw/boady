@@ -69,4 +69,13 @@ describe("Emulator tab in a DOM", () => {
     act(() => void window.dispatchEvent(new Event("blur")));
     expect(f.calls).toEqual([[14, false], [14, null]]);
   });
+
+  it("releases when focus moves away from a held button (Tab) and the key goes up elsewhere", () => {
+    button().focus();
+    key(button(), "keydown");
+    const other = host.querySelector("#elsewhere") as HTMLElement;
+    act(() => other.focus());
+    key(other, "keyup");
+    expect(f.calls).toEqual([[14, false], [14, null]]);
+  });
 });
