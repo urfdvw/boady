@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .util import in_git_dir
+
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 SKIP_DIRS = {".git"}
 
@@ -19,7 +21,7 @@ def resolve(root: Path, rel: str) -> Path:
     root_r = root.resolve()
     if target != root_r and root_r not in target.parents:
         raise PathError(f"path outside project: {rel}")
-    if any(part in SKIP_DIRS for part in target.relative_to(root_r).parts):
+    if any(part in SKIP_DIRS for part in target.relative_to(root_r).parts) or in_git_dir(root_r, root_r / rel):
         raise PathError(f"path not allowed: {rel}")
     return target
 
@@ -32,9 +34,11 @@ def entry(root: Path, rel: str) -> Path:
     """
     rel = rel.replace("\\", "/").strip("/")
     parent, _, name = rel.rpartition("/")
-    if name in ("", ".", "..") or name == ".git":
+    if name in ("", ".", ".."):
         raise PathError(f"not an entry: {rel}")
     d = resolve(root, parent) if parent else root.resolve()
+    if name == ".git" or in_git_dir(root.resolve(), d / name):
+        raise PathError(f"not an entry: {rel}")
     return d / name
 
 

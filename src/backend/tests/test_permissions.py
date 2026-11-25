@@ -99,3 +99,37 @@ def test_bash_circup_refused_through_linked_lib(tmp_path):
     assert hard_block("Bash", cmd, root) is None
     (root / "src" / "lib").symlink_to(outside)
     assert "symlink_in_lib" in hard_block("Bash", cmd, root)
+
+
+def _case_insensitive(d: Path) -> bool:
+    probe = d / "CaseProbe"
+    probe.write_text("x")
+    try:
+        return (d / "caseprobe").exists()
+    finally:
+        probe.unlink()
+
+
+def test_git_dir_is_protected_under_any_spelling_or_link(tmp_path):
+    """Review 8, finding 1: on a case-insensitive file system .GIT/config is .git/config."""
+    from boady import files
+    from boady.util import in_git_dir
+
+    root = tmp_path / "proj"
+    (root / ".git").mkdir(parents=True)
+    (root / ".git" / "config").write_text("[core]\n")
+    (root / "gitlink").symlink_to(root / ".git")
+    assert hard_block("Write", {"file_path": str(root / "gitlink" / "config")}, root)
+    assert in_git_dir(root, Path("gitlink/hooks/new"))
+    with pytest.raises(files.PathError):
+        files.write(root, "gitlink/config", "x")
+    if _case_insensitive(tmp_path):
+        for p in (".GIT/config", ".Git/hooks/pre-commit", str(root / ".GIT" / "config")):
+            assert hard_block("Edit", {"file_path": p}, root), p
+        with pytest.raises(files.PathError):
+            files.write(root, ".GIT/config", "evil")
+        with pytest.raises(files.PathError):
+            files.entry(root, ".GIT")
+        assert (root / ".git" / "config").read_text() == "[core]\n"
+    assert hard_block("Write", {"file_path": "src/code.py"}, root) is None
+    assert not in_git_dir(root, Path("src/.gitignore"))

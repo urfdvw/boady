@@ -16,7 +16,7 @@ import shlex
 from pathlib import Path
 from typing import Any, Literal
 
-from .util import is_within
+from .util import in_git_dir, is_within
 
 BUILTIN_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep", "Bash", "TodoWrite"]
 MCP_PREFIX = "mcp__boady__"
@@ -79,10 +79,7 @@ def _inside(root: Path, p: str | None, default_inside: bool = True) -> bool:
 def _in_git_dir(root: Path, p: str | None) -> bool:
     if not p:
         return False
-    path = Path(p)
-    if not path.is_absolute():
-        path = root / path
-    return is_within(path, root / ".git")
+    return in_git_dir(root, Path(p))
 
 
 def parse_bash(command: str) -> list[str] | None:

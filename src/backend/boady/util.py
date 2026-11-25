@@ -38,6 +38,26 @@ def write_json(path: Path, data: Any, mode: int | None = None) -> None:
     atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n", mode)
 
 
+def in_git_dir(root: Path, path: Path) -> bool:
+    """True if ``path`` is the project's ``.git`` or inside it, by file-system identity:
+    on a case-insensitive file system ``.GIT/config`` is ``.git/config`` (review 8),
+    and a link to ``.git`` is ``.git`` too."""
+    git = root / ".git"
+    p = path if path.is_absolute() else root / path
+    if is_within(p, git):
+        return True
+    if not git.exists():
+        return False
+    for cand in {Path(os.path.abspath(p)), p.resolve()}:
+        for a in (cand, *cand.parents):
+            try:
+                if os.path.samefile(a, git):
+                    return True
+            except OSError:
+                continue  # does not exist (yet)
+    return False
+
+
 def is_within(path: Path, root: Path) -> bool:
     """True if ``path`` (resolved) is ``root`` or inside it."""
     try:
