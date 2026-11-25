@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fromBase64, fromUtf8, parsePyBytes, pyBytes, sha256hex, toBase64, utf8 } from "./bytes";
 import { choosePorts, DeviceManager, replScore } from "./device";
+import { FakeDir, FakeFile } from "./fakeDrive";
 
 /** A CircuitPython-like board behind a fake serial port, driven through DeviceManager. */
 function fakeCircuitPython(dm: DeviceManager, opts: { hashlib: boolean }) {
@@ -152,6 +153,26 @@ describe("review fixes", () => {
     expect(choosePorts([a, b, b2], [b, b2])).toEqual([b, b2]);
     expect(choosePorts([a], [b])).toEqual([]); // picked board gone: do not fall back to another board
     expect(choosePorts([b, a, b2], [])).toEqual([b, b2]); // no choice yet (page load)
+  });
+});
+
+function withDrive(dm: DeviceManager) {
+  const root = new FakeDir();
+  root.children.set("boot_out.txt", new FakeFile("boot_out.txt", utf8("UID:ABCD\n")));
+  for (const n of ["a.py", "b.py", "c.py"]) root.children.set(n, new FakeFile(n, utf8(n)));
+  dm.drive = root as unknown as FileSystemDirectoryHandle;
+  return root;
+}
+
+describe("MSC channel", () => {
+  it("stops deleting when cancelled (review 2, finding 5)", async () => {
+    const { dm } = setup();
+    fakeCircuitPython(dm, { hashlib: true });
+    const root = withDrive(dm);
+    const ac = new AbortController();
+    root.onRemove = () => ac.abort(); // cancel right after the first deletion
+    await expect(dm.handle("fs.apply", { files: {}, delete: ["a.py", "b.py", "c.py"] }, ac.signal)).rejects.toThrow("cancelled");
+    expect([...root.children.keys()].sort()).toEqual(["b.py", "boot_out.txt", "c.py"]);
   });
 });
 

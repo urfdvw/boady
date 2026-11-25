@@ -397,7 +397,10 @@ export class DeviceManager implements Hardware {
           if (signal.aborted) throw new Error("cancelled");
           await msc.writeFile(this.drive!, p, fromBase64(files[p]));
         }
-        for (const p of deleted) await msc.removeFile(this.drive!, p);
+        for (const p of deleted) {
+          if (signal.aborted) throw new Error("cancelled");
+          await msc.removeFile(this.drive!, p);
+        }
       } finally {
         await this.withRaw(new AbortController().signal, (r) => cpAutoreloadRestore(r, prev)).catch(() => {});
       }
