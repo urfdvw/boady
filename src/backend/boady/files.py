@@ -24,6 +24,20 @@ def resolve(root: Path, rel: str) -> Path:
     return target
 
 
+def entry(root: Path, rel: str) -> Path:
+    """The entry ``rel`` itself (a symlink is not followed), for deleting it.
+
+    The parent directory must resolve inside ``root`` (and outside ``.git``);
+    the last component is checked by name only.
+    """
+    rel = rel.replace("\\", "/").strip("/")
+    parent, _, name = rel.rpartition("/")
+    if name in ("", ".", "..") or name == ".git":
+        raise PathError(f"not an entry: {rel}")
+    d = resolve(root, parent) if parent else root.resolve()
+    return d / name
+
+
 def tree(root: Path) -> list[dict[str, Any]]:
     """Flat, sorted list of entries: {path, dir, size}. Directories first per level."""
     out: list[dict[str, Any]] = []

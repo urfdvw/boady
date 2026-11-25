@@ -116,18 +116,18 @@ async def _reset_one(repo: Path, path: str) -> None:
         await git(repo, "restore", "--staged", "--worktree", "--source=HEAD", "--", path)
     else:
         await run(["git", "rm", "-q", "--cached", "--ignore-unmatch", "--", path], cwd=repo)
-        target = files.resolve(repo, path)
-        if target.is_file():
+        target = files.entry(repo, path)  # the link itself, never what it points to
+        if target.is_symlink() or target.is_file():
             target.unlink()
 
 
 async def reset_file(repo: Path, path: str) -> None:
     """Discard changes to one path; a rename is undone on both ends."""
-    files.resolve(repo, path)  # refuses paths outside the project and inside .git
+    files.entry(repo, path)  # refuses paths outside the project and inside .git (links not followed)
     entry = next((e for e in await status(repo) if e["path"] == path), None)
     await _reset_one(repo, path)
     if entry and entry.get("from"):
-        files.resolve(repo, entry["from"])
+        files.entry(repo, entry["from"])
         await _reset_one(repo, entry["from"])
 
 

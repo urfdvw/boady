@@ -191,3 +191,25 @@ async def test_clone_with_src_symlink_is_unfit(tmp_path):
     with pytest.raises(projects.ProjectError, match="repo_unfit"):
         await projects.clone(pdir, str(src), set(), None)
     assert not (pdir / "source").exists()
+
+
+
+async def test_reset_untracked_symlink_removes_the_link_only(tmp_path):
+    """Review 6, finding 3: resetting src/alias.py -> main.py deleted main.py."""
+    root = await projects.create(tmp_path, "lnk", "micropython")
+    main = root / "src" / "main.py"
+    main.write_text("uncommitted edit\n")
+    (root / "src" / "alias.py").symlink_to("main.py")
+    await gitops.reset_file(root, "src/alias.py")
+    assert not (root / "src" / "alias.py").is_symlink()
+    assert main.read_text() == "uncommitted edit\n"
+
+
+async def test_reset_untracked_link_pointing_outside(tmp_path):
+    root = await projects.create(tmp_path / "p", "lnk2", "circuitpython")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep")
+    (root / "src" / "out.txt").symlink_to(outside)
+    await gitops.reset_file(root, "src/out.txt")
+    assert not (root / "src" / "out.txt").is_symlink()
+    assert outside.read_text() == "keep"
