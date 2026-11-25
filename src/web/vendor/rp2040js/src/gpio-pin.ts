@@ -240,6 +240,17 @@ export class GPIOPin {
     this.applyInputValue(value);
   }
 
+  /** boady: stop driving the pin from outside (a released button); the pulls decide again. */
+  releaseInput() {
+    this.driven = false;
+    this.applyInputValue(this.effectiveRawInputValue);
+  }
+
+  /** boady: the pad's electrical level: the chip's output when enabled, else the input side. */
+  get padLevel() {
+    return this.outputEnable ? this.outputValue : this.effectiveRawInputValue;
+  }
+
   /**
    * Shared by setInputValue() (an actual external drive) and refreshInput() (just re-evaluating
    * IRQ/PWM/PIO wait state after e.g. inputEnable toggled) - only the former should mark the pin

@@ -13,6 +13,7 @@ self.onmessage = (e: MessageEvent) => {
         pico.onData = (b) => self.postMessage({ type: "data", bytes: b }, [b.buffer]);
         pico.onConnected = () => self.postMessage({ type: "ready" });
         pico.onFlashChanged = () => self.postMessage({ type: "flashChanged" });
+        pico.onPins = (p) => self.postMessage({ type: "pins", pins: p });
         pico.start();
       } catch (e) {
         self.postMessage({ type: "error", message: String((e as Error)?.message || e) });
@@ -20,6 +21,13 @@ self.onmessage = (e: MessageEvent) => {
       break;
     case "write":
       pico?.write(m.bytes);
+      break;
+    case "setPin":
+      try {
+        pico?.setPin(m.pin, m.value);
+      } catch {
+        /* not a GPIO: ignored */
+      }
       break;
     case "flash": {
       const f = pico ? pico.flash() : new Uint8Array();

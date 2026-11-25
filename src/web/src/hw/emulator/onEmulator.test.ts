@@ -286,6 +286,45 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       await waitFor(">>> ", at, 30000);
     }, 120000);
 
+    it("shows GPIO levels and takes button input (Emulator tab, D42)", async () => {
+      const pins = dm.emulatorPins!;
+      expect(pins).toBe(link);
+      const bitOf = (mask: number, i: number) => (mask >>> i) & 1;
+      const until = async (ok: () => boolean, what: string) => {
+        const end = Date.now() + 10000;
+        while (!ok()) {
+          if (Date.now() > end) throw new Error(`timeout: ${what}; pins ${JSON.stringify(pins.pins)}`);
+          await sleep(20);
+        }
+      };
+      const run = async (line: string, expect?: string) => {
+        const at = stream().length;
+        await type(line + "\r");
+        if (expect) await waitFor(expect, at + line.length, 10000);
+        await waitFor(">>> ", at + line.length, 10000);
+      };
+      if (runtime === "micropython") {
+        await run("from machine import Pin;o=Pin(15,Pin.OUT);o.value(1);i=Pin(14,Pin.IN,Pin.PULL_UP);led=Pin('LED',Pin.OUT);led.value(1)");
+      } else {
+        await run(
+          "import board,digitalio;o=digitalio.DigitalInOut(board.GP15);o.switch_to_output(True);i=digitalio.DigitalInOut(board.GP14);i.switch_to_input(digitalio.Pull.UP);led=digitalio.DigitalInOut(board.LED);led.switch_to_output(True)",
+        );
+      }
+      const read = runtime === "micropython" ? "print('V%d' % i.value())" : "print('V%d' % i.value)";
+      await until(() => bitOf(pins.pins.levels, 15) === 1 && bitOf(pins.pins.outputs, 15) === 1, "GP15 high output");
+      await until(() => bitOf(pins.pins.levels, 25) === 1, "on-board LED lit");
+      await until(() => bitOf(pins.pins.levels, 14) === 1 && bitOf(pins.pins.outputs, 14) === 0, "GP14 pulled up");
+      pins.setPin(14, false); // button to GND pressed
+      await until(() => bitOf(pins.pins.levels, 14) === 0, "GP14 driven low");
+      await run(read, "V0");
+      pins.setPin(14, null); // released: the pull-up decides again
+      await until(() => bitOf(pins.pins.levels, 14) === 1, "GP14 released");
+      await run(read, "V1");
+      await run(runtime === "micropython" ? "o.value(0)" : "o.value=False");
+      await until(() => bitOf(pins.pins.levels, 15) === 0, "GP15 low");
+      await run(runtime === "micropython" ? "led.value(0)" : "led.deinit();o.deinit();i.deinit()");
+    }, 60000);
+
     it("reports a real Traceback from the raw REPL as an error", async () => {
       const { RawRepl, ExecError } = await import("../rawRepl");
       const r = new RawRepl(link, signal());

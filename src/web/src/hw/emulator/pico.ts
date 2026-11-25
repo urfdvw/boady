@@ -39,6 +39,15 @@ export interface PicoOptions {
   uid: Uint8Array;
 }
 
+/** GPIOs of the RP2040 (GP0–GP29). */
+export const GPIO_COUNT = 30;
+
+/** Bit i = GPIO i. ``levels``: the pad's level; ``outputs``: the chip drives the pin. */
+export interface PinState {
+  levels: number;
+  outputs: number;
+}
+
 export class PicoMachine {
   private sim = new Simulator();
   private cdc: USBCDC;
@@ -55,6 +64,11 @@ export class PicoMachine {
   onFlashChanged: () => void = () => {};
   quietMs = 1000;
   maxMs = 5000;
+  /** GPIO levels changed (sampled every ``pinsMs`` while running). */
+  onPins: (p: PinState) => void = () => {};
+  pinsMs = 50;
+  private pinTimer: ReturnType<typeof setInterval> | null = null;
+  private lastPins: PinState = { levels: -1, outputs: -1 };
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
   private firstUnsaved: number | null = null;
 
@@ -116,6 +130,36 @@ export class PicoMachine {
       const fifo = this.cdc.txFIFO;
       while (this.queue.length && !fifo.full) this.cdc.sendSerialByte(this.queue.shift()!);
     }, 1);
+    this.pinTimer = setInterval(() => this.samplePins(), this.pinsMs);
+  }
+
+  /** Current level and direction of every GPIO. */
+  pins(): PinState {
+    let levels = 0;
+    let outputs = 0;
+    const gpio = this.sim.rp2040.gpio;
+    for (let i = 0; i < GPIO_COUNT; i++) {
+      if (gpio[i].padLevel) levels |= 1 << i;
+      if (gpio[i].outputEnable) outputs |= 1 << i;
+    }
+    return { levels: levels >>> 0, outputs: outputs >>> 0 };
+  }
+
+  /** Drive a GPIO from outside (a pressed button): ``true`` high, ``false`` low, ``null`` released. */
+  setPin(pin: number, value: boolean | null): void {
+    if (!Number.isInteger(pin) || pin < 0 || pin >= GPIO_COUNT) throw new Error(`no GPIO ${pin}`);
+    const g = this.sim.rp2040.gpio[pin];
+    if (value === null) g.releaseInput();
+    else g.setInputValue(value);
+    this.samplePins();
+  }
+
+  private samplePins() {
+    const p = this.pins();
+    if (p.levels !== this.lastPins.levels || p.outputs !== this.lastPins.outputs) {
+      this.lastPins = p;
+      this.onPins(p);
+    }
   }
 
   write(b: Uint8Array): void {
@@ -138,6 +182,8 @@ export class PicoMachine {
     this.firstUnsaved = null;
     if (this.pump) clearInterval(this.pump);
     this.pump = null;
+    if (this.pinTimer) clearInterval(this.pinTimer);
+    this.pinTimer = null;
     this.sim.stop();
   }
 }

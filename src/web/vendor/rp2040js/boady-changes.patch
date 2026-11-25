@@ -75,7 +75,7 @@ index 0000000..e1bd1f1
 +  });
 +});
 diff --git a/src/gpio-pin.ts b/src/gpio-pin.ts
-index 76a2de9..a6dff05 100644
+index 76a2de9..19afbd7 100644
 --- a/src/gpio-pin.ts
 +++ b/src/gpio-pin.ts
 @@ -39,6 +39,12 @@ const IRQ_LEVEL_LOW = 1 << 0;
@@ -153,12 +153,23 @@ index 76a2de9..a6dff05 100644
      const oeToPad = this.outputEnable ? 1 << 13 : 0;
      const oeFromPeri = this.rawOutputEnable ? 1 << 12 : 0;
      const outToPad = this.outputValue ? 1 << 9 : 0;
-@@ -201,6 +236,16 @@ export class GPIOPin {
+@@ -201,6 +236,27 @@ export class GPIOPin {
    }
  
    setInputValue(value: boolean) {
 +    this.driven = true;
 +    this.applyInputValue(value);
++  }
++
++  /** boady: stop driving the pin from outside (a released button); the pulls decide again. */
++  releaseInput() {
++    this.driven = false;
++    this.applyInputValue(this.effectiveRawInputValue);
++  }
++
++  /** boady: the pad's electrical level: the chip's output when enabled, else the input side. */
++  get padLevel() {
++    return this.outputEnable ? this.outputValue : this.effectiveRawInputValue;
 +  }
 +
 +  /**
@@ -170,7 +181,7 @@ index 76a2de9..a6dff05 100644
      this.rawInputValue = value;
      const prevIrqValue = this.irqValue;
      if (value && this.inputEnable) {
-@@ -241,7 +286,7 @@ export class GPIOPin {
+@@ -241,7 +297,7 @@ export class GPIOPin {
    }
  
    refreshInput() {

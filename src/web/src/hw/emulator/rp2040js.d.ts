@@ -18,10 +18,16 @@ declare module "@vendor/rp2040js" {
   export interface GPIOPin {
     padValue: number;
     setInputValue(value: boolean): void;
+    /** boady addition (D42) */
+    releaseInput(): void;
+    /** boady addition (D42) */
+    readonly padLevel: boolean;
+    readonly outputEnable: boolean;
   }
   export class RP2040 {
     readonly flash: Uint8Array;
     readonly qspi: GPIOPin[];
+    readonly gpio: GPIOPin[];
     readonly peripherals: { [index: number]: Peripheral };
     readonly usbCtrl: unknown;
     readonly core: { PC: number };

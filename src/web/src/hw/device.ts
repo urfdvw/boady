@@ -11,6 +11,7 @@ import { cpAutoreloadOff, cpAutoreloadRestore, cpFinishWrite, cpPrepareWrite, cp
 import * as msc from "./msc";
 import { PlotBuffer } from "./plot";
 import { RawRepl } from "./rawRepl";
+import type { EmulatorPins } from "./emulator/link";
 import { PortConn, type SerialLink } from "./serial";
 import { bootOutUid, excluded, plan } from "./syncRules";
 import { SerialHistory } from "./serialHistory";
@@ -124,6 +125,12 @@ export class DeviceManager implements Hardware {
   /** The testing-only emulator, if that is what is connected. */
   get emulated(): SerialLink["emulated"] {
     return this.conns.repl?.emulated;
+  }
+
+  /** The connected emulator's GPIOs (Emulator tab, D42), or null for a real board. */
+  get emulatorPins(): EmulatorPins | null {
+    const r = this.conns.repl as (SerialLink & Partial<EmulatorPins>) | undefined;
+    return r?.emulated && typeof r.subscribe === "function" && typeof r.setPin === "function" ? (r as EmulatorPins) : null;
   }
 
   /**
