@@ -251,3 +251,31 @@ def test_partial_pull_refuses_two_new_paths_that_are_one_file_here(tmp_path):
         with pytest.raises(ValueError, match="case_collision"):
             sync.apply_paths(src, {a: b64(b"1"), b: b64(b"2")}, [a, b])
         assert list(src.iterdir()) == []  # nothing written
+
+
+def test_partial_pull_turns_a_directory_into_a_file_and_back(tmp_path):
+    """Review 14, finding 3: mirror data/old.txt, board file data: IsADirectoryError."""
+    src = tmp_path / "src"
+    (src / "data").mkdir(parents=True)
+    (src / "data" / "old.txt").write_text("old")
+    (src / "keep.py").write_text("k")
+    res = sync.apply_paths(src, {"data": b64(b"now a file")}, ["data", "data/old.txt"])
+    assert res == {"added": ["data"], "modified": [], "deleted": ["data/old.txt"]}
+    assert (src / "data").read_text() == "now a file" and (src / "keep.py").exists()
+    res = sync.apply_paths(src, {"data/new.txt": b64(b"n")}, ["data", "data/new.txt"])
+    assert res == {"added": ["data/new.txt"], "modified": [], "deleted": ["data"]}
+    assert (src / "data" / "new.txt").read_text() == "n"
+
+
+def test_partial_pull_will_not_replace_a_directory_holding_unselected_files(tmp_path):
+    src = tmp_path / "src"
+    (src / "data").mkdir(parents=True)
+    (src / "data" / "a.txt").write_text("a")
+    (src / "data" / "b.txt").write_text("b")
+    with pytest.raises(ValueError, match="still holds 'data/b.txt'"):
+        sync.apply_paths(src, {"data": b64(b"file")}, ["data", "data/a.txt"])
+    assert (src / "data" / "a.txt").read_text() == "a"  # checked before anything changed
+    (src / "f").write_text("file")
+    with pytest.raises(ValueError, match="'f' is a file"):
+        sync.apply_paths(src, {"f/x.txt": b64(b"x")}, ["f/x.txt"])
+    assert (src / "f").read_text() == "file"

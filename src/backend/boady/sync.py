@@ -209,7 +209,13 @@ def _through_link(src: Path, rel: str) -> bool:
 
 
 def apply_paths(src: Path, board_files: dict[str, str], paths: list[str]) -> dict[str, list[str]]:
-    """Make only ``paths`` in the mirror equal to the board; nothing else changes."""
+    """Make only ``paths`` in the mirror equal to the board; nothing else changes.
+
+    Everything is checked before anything changes: paths, links, other spellings
+    of existing entries, and paths of this pull that would be one entry here
+    (review 14). Deletions come first, then the emptied directories among them, so
+    a directory can become a file (and back) within the selection.
+    """
     bad = [p for p in paths if canonical_rel(p) is None]
     if bad:
         raise ValueError(f"not a canonical path: {bad[0]!r}")
@@ -217,7 +223,6 @@ def apply_paths(src: Path, board_files: dict[str, str], paths: list[str]) -> dic
         alias = case_alias(src, p)
         if alias:
             raise ValueError(f"{p!r} would reach {alias!r} (different spelling); use the exact name")
-    # two paths of this pull that are one entry here (review 14), like the full pull
     fold_case, fold_unicode = case_insensitive(src), normalization_insensitive(src)
     if fold_case or fold_unicode:
         clashes = case_collisions(list(paths), fold_case, fold_unicode)
@@ -225,25 +230,59 @@ def apply_paths(src: Path, board_files: dict[str, str], paths: list[str]) -> dic
             a, b = clashes[0]
             raise ValueError(f"case_collision: {a!r} and {b!r} would be one file on this computer, which cannot keep both; rename one on the board")
     board = {k.strip("/"): v for k, v in board_files.items()}
-    added, modified, deleted = [], [], []
     for rel in paths:
-        target = _safe_target(src, rel)
+        _safe_target(src, rel)
         if _through_link(src, rel):
             raise ValueError(f"refusing a path through a symlink: {rel}")
-        if rel in board:
-            data = base64.b64decode(board[rel])
-            if target.is_file():
-                if target.read_bytes() == data:
-                    continue
-                modified.append(rel)
-            else:
-                added.append(rel)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-        elif target.is_file():
+    deletions = [rel for rel in paths if rel not in board]
+    writes = [rel for rel in paths if rel in board]
+    gone = set(deletions)
+    local = mirror_files(src)
+    for rel in writes:
+        target = src / rel
+        if target.is_dir():
+            rest = sorted(f for f in local if f.startswith(rel + "/") and f not in gone)
+            if rest:
+                raise ValueError(f"{rel!r} is a directory in the mirror that still holds {rest[0]!r}; select those files too to replace it with the board's file")
+        parts = rel.split("/")
+        for k in range(1, len(parts)):
+            anc = "/".join(parts[:k])
+            if (src / anc).is_file() and anc not in gone:
+                raise ValueError(f"{anc!r} is a file in the mirror; select it too to replace it with the board's directory")
+    added, modified, deleted = [], [], []
+    for rel in deletions:
+        target = src / rel
+        if target.is_file():
             target.unlink()
             deleted.append(rel)
+            _prune_up(src, target.parent)
+    for rel in writes:
+        target = src / rel
+        if target.is_dir():
+            _prune_empty_dirs(target)
+            target.rmdir()
+    for rel in writes:
+        target = src / rel
+        data = base64.b64decode(board[rel])
+        if target.is_file():
+            if target.read_bytes() == data:
+                continue
+            modified.append(rel)
+        else:
+            added.append(rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
     return {"added": added, "modified": modified, "deleted": deleted}
+
+
+def _prune_up(src: Path, d: Path) -> None:
+    """Remove ``d`` and its parents while they are empty, never ``src`` itself."""
+    while d != src and src in d.parents:
+        try:
+            d.rmdir()
+        except OSError:
+            return
+        d = d.parent
 
 
 def _prune_empty_dirs(root: Path) -> None:
