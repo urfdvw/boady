@@ -39,6 +39,17 @@ def decode_ctrl(data: str) -> str:
     return _CTRL.sub(lambda m: chr(int(m.group(1))), data)
 
 
+_WAIT_ESC = re.compile(r"\\(x0[1-4]|r|n)")
+_WAIT_CHARS = {"r": "\r", "n": "\n"}
+
+
+def decode_wait_for(text: str) -> str:
+    r"""``wait_for`` written the way the prompt teaches writing: ``\x01``..``\x04``,
+    ``\r`` and ``\n`` as escape text become the real characters (board output
+    practically never contains a literal backslash before them)."""
+    return _WAIT_ESC.sub(lambda m: _WAIT_CHARS.get(m.group(1)) or chr(int(m.group(1)[1:], 16)), text)
+
+
 @dataclass
 class ToolContext:
     bridge: HardwareBridge
@@ -69,7 +80,7 @@ READ_SCHEMA = {
     "properties": {
         "since": {"type": "integer", "description": "Cursor (byte position) to read from; use the cursor returned by a write."},
         "tail": {"type": "integer", "description": "Only return the last N lines."},
-        "wait_for": {"type": "string", "description": "Wait until this text appears after `since`."},
+        "wait_for": {"type": "string", "description": "Wait until this text appears after `since`. \\x01-\\x04, \\r and \\n may be written as escapes."},
         "timeout_ms": {"type": "integer", "description": "Max wait for `wait_for` (default 0)."},
     },
 }
@@ -255,7 +266,7 @@ def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bo
         r = await b.buffers[port].read(
             since=args.get("since"),
             tail=args.get("tail"),
-            wait_for=args.get("wait_for") or None,
+            wait_for=decode_wait_for(str(args["wait_for"])) if args.get("wait_for") else None,
             timeout_ms=int(args.get("timeout_ms") or 0),
         )
         return _ok(r.to_dict())

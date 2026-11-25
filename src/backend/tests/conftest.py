@@ -78,3 +78,24 @@ def fake_client():
     yield FakeClient
     FakeClient.instances = []
     FakeClient.script = None
+
+
+@pytest.fixture
+def tool_handlers(monkeypatch):
+    """Build the boady MCP server and return its tools' handlers by name."""
+    from boady import mcp_tools
+
+    built: list[dict] = []
+    real = mcp_tools.create_sdk_mcp_server
+
+    def record(name, version, tools):
+        built.append({t.name: t.handler for t in tools})
+        return real(name, version, tools)
+
+    monkeypatch.setattr(mcp_tools, "create_sdk_mcp_server", record)
+
+    def build(ctx, **kw):
+        mcp_tools.build_server(ctx, **kw)
+        return built[-1]
+
+    return build

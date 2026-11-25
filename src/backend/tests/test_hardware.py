@@ -3,7 +3,10 @@ import asyncio
 import pytest
 
 from boady.hardware import HardwareBridge, HardwareError
-from boady.mcp_tools import decode_ctrl
+import json
+from pathlib import Path
+
+from boady.mcp_tools import ToolContext, decode_ctrl, decode_wait_for
 
 
 async def test_not_connected():
@@ -92,3 +95,32 @@ def test_decode_ctrl():
     assert decode_ctrl(r'exec("a\nb")\r') == r'exec("a\nb")' + "\r"
     assert decode_ctrl("\x03") == "\x03"
     assert decode_ctrl(r"\x05") == r"\x05"
+
+
+def test_decode_wait_for():
+    assert decode_wait_for(r"\x04>") == "\x04>"
+    assert decode_wait_for(r"OK\x04") == "OK\x04"
+    assert decode_wait_for(r"Code done running.\r\n") == "Code done running.\r\n"
+    assert decode_wait_for(">>> ") == ">>> "
+    assert decode_wait_for(r"\x05") == r"\x05"
+
+
+async def _ctx():
+    b, sent = await _bridge_with_frontend()
+
+    async def confirm(what, detail):
+        return True
+
+    async def changed():
+        return None
+
+    return ToolContext(bridge=b, project_dir=lambda: None, confirm=confirm, on_mirror_changed=changed), sent
+
+
+async def test_read_repl_wait_for_understands_ctrl_escapes(tool_handlers):
+    """Review 7, prompt finding 3: the agent writes Ctrl keys as escape text; wait_for must too."""
+    ctx, _ = await _ctx()
+    tools = tool_handlers(ctx)
+    await ctx.bridge.serial_data("repl", b"OK\x04hello\r\n\x04>")
+    res = await tools["read_repl"]({"since": 0, "wait_for": r"\x04>", "timeout_ms": 50})
+    assert json.loads(res["content"][0]["text"])["matched"] is True
