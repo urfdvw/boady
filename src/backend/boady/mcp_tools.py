@@ -178,10 +178,18 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] 
             else:
                 base.pop(rel, None)
         ctx.set_baseline(base)
+    changes = {**changes, **_read_channel(res)}
     if ctx.on_synced:
         await ctx.on_synced("pull", changes)
     await ctx.on_mirror_changed()
     return changes
+
+
+def _read_channel(res: Any) -> dict[str, Any]:
+    """How the board was read: over serial the raw REPL interrupted the program,
+    over the CIRCUITPY drive it kept running (review 10)."""
+    ch = (res or {}).get("channel")
+    return {"channel": ch, "program_stopped": ch != "msc"} if ch in ("msc", "serial") else {}
 
 
 def _src(root: Path) -> Path:
@@ -272,6 +280,7 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
         out["edited_in_mirror"] = sorted(p for p in out["changed_on_board"] if mirror.get(p) != baseline.get(p))
     interesting = out["changed_on_board"] if baseline is not None else out["board_only"] + out["differs"]
     out["diffs"] = sync.text_diffs(local, board_files, interesting)
+    out.update(_read_channel(res))
     if baseline is None:
         out["note"] = "No baseline yet (no pull or upload since boady started tracking this board): changed_on_board is unknown."
     return out

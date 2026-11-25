@@ -252,3 +252,23 @@ async def test_first_emulator_binding_reaches_a_session_that_already_chatted(env
     assert app.project.board == "rp2040js"
     assert app.session.client is not first and not first.connected
     assert "Emulator tab" in app.session.client.options.system_prompt["append"]
+
+
+async def test_reads_say_whether_the_program_was_stopped(env, board, tool_handlers):
+    """Review 10, prompt 3: over the drive the program keeps running; over serial it is stopped."""
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "ch", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    await ws.action("git.commit", {"message": "board"}, "g")
+    tools = tool_handlers(app.tool_ctx)
+    for channel, stopped in (("msc", False), ("serial", True)):
+        for name in ("compare_with_device", "sync_from_device"):
+            task = asyncio.create_task(tools[name]({}))
+            req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.read_all", timeout=10)
+            await ws.send({"type": "hw.response", "id": req["id"], "ok": True,
+                           "result": {"files": {"code.py": base64.b64encode(b"x").decode()}, "channel": channel}})
+            out = body(await task)
+            assert out["channel"] == channel and out["program_stopped"] is stopped, (name, out)
