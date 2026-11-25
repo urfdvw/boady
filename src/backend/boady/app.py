@@ -25,7 +25,7 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from . import files, gitops, identify, libraries, mcp_tools, pairing, projects, prompts
+from . import files, gitops, sync, identify, libraries, mcp_tools, pairing, projects, prompts
 from .agent import AgentSession, claude_env, cli_path
 from .config import PROJECT_TYPES, Paths
 from .hardware import DeviceState, HardwareBridge, HardwareError
@@ -513,7 +513,7 @@ class App:
         try:
             result = await self.run_action(str(name), params)
             await self.send({"type": "action.result", "id": rid, "ok": True, "result": result})
-        except (projects.ProjectError, files.PathError, ProcError, ValueError, HardwareError, libraries.LibraryError) as e:
+        except (projects.ProjectError, files.PathError, ProcError, ValueError, HardwareError, libraries.LibraryError, sync.MirrorPathError) as e:
             await self.send({"type": "action.result", "id": rid, "ok": False, "error": str(e)})
         except Exception as e:
             log.exception("action %s failed", name)
@@ -607,18 +607,18 @@ class App:
             return await mcp_tools.push_to_device(self.tool_ctx)
         # --- libraries (mirror only) ---
         if name.startswith("lib."):
-            root = self._root()
+            src = sync.mirror_src(self._root())
             ptype = self.project.type if self.project else ""
             if name == "lib.list":
-                return {"libraries": await libraries.list_installed(ptype, root / "src")}
+                return {"libraries": await libraries.list_installed(ptype, src)}
             if name == "lib.search":
-                return {"results": await libraries.search(ptype, root / "src", str(p.get("query", "")))}
+                return {"results": await libraries.search(ptype, src, str(p.get("query", "")))}
             if name == "lib.install":
-                out = await libraries.install(ptype, root / "src", list(p.get("names") or []), self.project.mpy_version if self.project else None)
+                out = await libraries.install(ptype, src, list(p.get("names") or []), self.project.mpy_version if self.project else None)
             elif name == "lib.update":
-                out = await libraries.update(ptype, root / "src")
+                out = await libraries.update(ptype, src)
             elif name == "lib.uninstall":
-                out = await libraries.uninstall(ptype, root / "src", list(p.get("names") or []))
+                out = await libraries.uninstall(ptype, src, list(p.get("names") or []))
             else:
                 raise ValueError(f"unknown action: {name}")
             await self.push_state()

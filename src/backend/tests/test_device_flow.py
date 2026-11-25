@@ -238,3 +238,25 @@ async def test_pull_reasks_for_edits_made_while_the_first_card_waits(env, board)
     await ws.send({"type": "permission_reply", "request_id": second["request_id"], "allow": False})
     await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text") == "pull_declined")
     assert (app.project.path / "src" / "new.py").exists()
+
+
+async def test_src_symlink_never_reaches_outside(env, board, tmp_path):
+    """Review 2, finding 2: a src symlink must not let a pull delete files elsewhere."""
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "p1", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    outside = tmp_path / "victim"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("keep")
+    src = app.project.path / "src"
+    import shutil
+
+    shutil.rmtree(src)
+    src.symlink_to(outside)
+    for action in ("device.pull", "device.push", "lib.list"):
+        r = await ws.action(action, {}, action)
+        assert not r["ok"] and "symbolic link" in r["error"], (action, r)
+    assert (outside / "keep.txt").read_text() == "keep"

@@ -48,3 +48,30 @@ def test_manifest(tmp_path):
     m = sync.manifest(src)
     assert list(m) == ["a.py"]
     assert m["a.py"] == sync.sha256(b"abc")
+
+
+def test_mirror_src_refuses_symlinks(tmp_path):
+    """Review 2, finding 2."""
+    import pytest
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("keep")
+    (root / "src").symlink_to(outside)
+    with pytest.raises(sync.MirrorPathError):
+        sync.mirror_src(root)
+
+
+def test_nested_symlinks_are_not_followed_or_deleted(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("keep")
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "lib").symlink_to(outside)
+    (src / "link.txt").symlink_to(outside / "keep.txt")
+    assert sync.mirror_files(src) == {}
+    sync.apply_from_device(src, {})  # board is empty: must not delete through the links
+    assert (outside / "keep.txt").read_text() == "keep"

@@ -117,6 +117,13 @@ async def clone(projects_dir: Path, url: str, taken: set[str], classify: Classif
     except ProcError as e:
         shutil.rmtree(root, ignore_errors=True)
         raise ProjectError(f"clone_failed: {e}") from e
+    from .sync import MirrorPathError, mirror_src
+
+    try:
+        mirror_src(root)
+    except MirrorPathError as e:
+        shutil.rmtree(root, ignore_errors=True)
+        raise ProjectError(f"repo_unfit: {e}") from e
     project_type = read_type(root)
     if project_type is None:
         try:

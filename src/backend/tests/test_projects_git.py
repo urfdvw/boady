@@ -175,3 +175,19 @@ async def test_reset_renamed_file(tmp_path):
     await gitops.reset_file(root, "src/renamed.py")
     assert (root / "src" / "code.py").exists() and not (root / "src" / "renamed.py").exists()
     assert await gitops.status(root) == []
+
+
+async def test_clone_with_src_symlink_is_unfit(tmp_path):
+    """Review 2, finding 2: cloned repos keep symlinks; a src link is refused."""
+    src = tmp_path / "source"
+    src.mkdir()
+    (src / "src").symlink_to("/tmp")
+    (src / "boady.json").write_text('{"type": "circuitpython"}')
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=src, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=src, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=src, check=True)
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    with pytest.raises(projects.ProjectError, match="repo_unfit"):
+        await projects.clone(pdir, str(src), set(), None)
+    assert not (pdir / "source").exists()

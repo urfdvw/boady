@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import fnmatch
 import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
@@ -37,16 +38,44 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+class MirrorPathError(ValueError):
+    pass
+
+
+def mirror_src(root: Path) -> Path:
+    """The project's ``src/``, refusing a symlink or anything resolving outside the project.
+
+    A cloned repository may contain a ``src`` symlink to an arbitrary place;
+    syncing or installing libraries through it would write or delete there.
+    """
+    src = root / "src"
+    if src.is_symlink():
+        raise MirrorPathError("src/ is a symbolic link; boady refuses to use it")
+    r_root, r_src = root.resolve(), src.resolve()
+    if r_root not in r_src.parents:
+        raise MirrorPathError("src/ resolves outside the project")
+    return src
+
+
 def mirror_files(src: Path) -> dict[str, Path]:
+    """Regular files under ``src`` (symlinks are neither followed nor listed)."""
     out: dict[str, Path] = {}
-    if not src.is_dir():
+    if not src.is_dir() or src.is_symlink():
         return out
-    for p in sorted(src.rglob("*")):
-        if p.is_file() and not p.is_symlink():
+    base = src.resolve()
+    for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
+        d = Path(dirpath)
+        dirnames[:] = sorted(n for n in dirnames if not (d / n).is_symlink())
+        for n in sorted(filenames):
+            p = d / n
+            if p.is_symlink() or not p.is_file():
+                continue
+            if base not in p.resolve().parents:
+                continue
             rel = p.relative_to(src).as_posix()
             if not excluded(rel):
                 out[rel] = p
-    return out
+    return dict(sorted(out.items()))
 
 
 def manifest(src: Path) -> dict[str, str]:
@@ -90,7 +119,10 @@ def apply_from_device(src: Path, board_files: dict[str, str]) -> dict[str, list[
 
 
 def _prune_empty_dirs(root: Path) -> None:
-    for d in sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)):
+    for dirpath, _dirs, _files in os.walk(root, topdown=False, followlinks=False):
+        d = Path(dirpath)
+        if d == root or d.is_symlink():
+            continue
         try:
             d.rmdir()
         except OSError:

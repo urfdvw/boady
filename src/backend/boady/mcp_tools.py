@@ -84,26 +84,34 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]
     if not ctx.bridge.connected:
         raise HardwareError("Device not connected.")
     _check_board(ctx)
+    src = _src(root)
     # fingerprint first: everything changed after this moment is asked about again,
     # including edits made while the first approval card is waiting
-    before = sync.manifest(root / "src")
+    before = sync.manifest(src)
     dirty = await _dirty_src(root)
     if dirty and ask and not await ctx.confirm("pull_overwrites", {"files": dirty}):
         return {"declined": True}
     res = await ctx.bridge.request("fs.read_all", {}, timeout=300)
     while True:
-        now = sync.manifest(root / "src")
+        now = sync.manifest(src)
         changed = sorted("src/" + p for p in set(before) | set(now) if before.get(p) != now.get(p))
         if not changed:
             break
         if not await ctx.confirm("pull_overwrites", {"files": changed}):
             return {"declined": True}
         before = now  # re-check: more edits may have arrived while asking
-    changes = sync.apply_from_device(root / "src", (res or {}).get("files", {}))
+    changes = sync.apply_from_device(src, (res or {}).get("files", {}))
     if ctx.on_synced:
         await ctx.on_synced("pull", changes)
     await ctx.on_mirror_changed()
     return changes
+
+
+def _src(root: Path) -> Path:
+    try:
+        return sync.mirror_src(root)
+    except sync.MirrorPathError as e:
+        raise HardwareError(str(e)) from e
 
 
 def _check_board(ctx: ToolContext) -> None:
@@ -119,7 +127,7 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     if not ctx.bridge.connected:
         raise HardwareError("Device not connected.")
     _check_board(ctx)
-    src = root / "src"
+    src = _src(root)
     plan = await ctx.bridge.request("fs.plan", {"manifest": sync.manifest(src)}, timeout=300) or {}
     need = list(plan.get("need", []))
     delete = [p for p in plan.get("delete", []) if not sync.excluded(p)]
@@ -206,8 +214,8 @@ def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bo
         if info is None or root is None:
             return _err("No project is open.")
         try:
-            out = await libraries.install(info[0], root / "src", list(args.get("names") or []), info[1])
-        except libraries.LibraryError as e:
+            out = await libraries.install(info[0], sync.mirror_src(root), list(args.get("names") or []), info[1])
+        except (libraries.LibraryError, sync.MirrorPathError) as e:
             return _err(str(e))
         await ctx.on_mirror_changed()
         return _ok({"output": out[-4000:]})
@@ -218,8 +226,8 @@ def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bo
         if info is None or root is None:
             return _err("No project is open.")
         try:
-            return _ok(await libraries.list_installed(info[0], root / "src"))
-        except libraries.LibraryError as e:
+            return _ok(await libraries.list_installed(info[0], sync.mirror_src(root)))
+        except (libraries.LibraryError, sync.MirrorPathError) as e:
             return _err(str(e))
 
     tools = [read_repl, write_repl, read_data, write_data, sync_from_device, sync_to_device, install_library, list_libraries]
