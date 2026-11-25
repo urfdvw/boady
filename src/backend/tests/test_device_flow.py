@@ -182,3 +182,39 @@ async def test_pull_reasks_when_mirror_changes_during_transfer(env, board):
     await ws.send({"type": "permission_reply", "request_id": perm["request_id"], "allow": False})
     await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text") == "pull_declined")
     assert (app.project.path / "src" / "code.py").read_text() == "saved during transfer"
+
+
+async def test_identification_tools_work_before_the_board_is_known(env, fake_client, monkeypatch):
+    """Review 2, finding 1: the identification call really calls write_repl
+    while a project is open and the board has no UID yet."""
+    import json as _json
+
+    from boady import mcp_tools
+
+    built = []
+    real = mcp_tools.create_sdk_mcp_server
+
+    def record(name, version, tools):
+        built.append({t.name: t for t in tools})
+        return real(name, version, tools)
+
+    monkeypatch.setattr(mcp_tools, "create_sdk_mcp_server", record)
+
+    async def script(c, text):
+        if "Identify" not in text:
+            return
+        tools = next(b for b in reversed(built) if set(b) == {"read_repl", "write_repl"})
+        res = await tools["write_repl"].handler({"data": "\\x03"})
+        body = _json.loads(res["content"][0]["text"])
+        line = "BOADY_ID error=write_failed" if res.get("is_error") else "BOADY_ID uid=ABCD1234 runtime=circuitpython version=9 mpy=6"
+        await c.queue.put(ResultMessage(subtype="success", duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1, session_id="x", result=line))
+
+    fake_client.script = script
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "p", "type": "circuitpython"})
+    await attach(ws)
+    req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "serial.write", timeout=10)
+    assert req["params"]["data"] == "\x03"
+    await ws.send({"type": "hw.response", "id": req["id"], "ok": True, "result": {}})
+    await ws.wait(lambda m: m["type"] == "state" and m["device"].get("uid") == "ABCD1234", timeout=10)

@@ -389,7 +389,7 @@ class App:
         d.identifying, d.error = True, None
         await self.push_state()
         try:
-            server, _ = mcp_tools.build_server(self.tool_ctx, only={"read_repl", "write_repl"})
+            server, _ = mcp_tools.build_server(self.tool_ctx, only={"read_repl", "write_repl"}, check_board=False)
             info = await identify.identify(server, self.paths.home / "identify", self.paths.claude_token_file, self.client_factory)
         except asyncio.CancelledError:
             raise

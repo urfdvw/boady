@@ -133,7 +133,9 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     return out
 
 
-def build_server(ctx: ToolContext, only: set[str] | None = None):
+def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bool = True):
+    """``check_board=False`` only for the identification call: it must talk to a
+    board that is not identified yet (and it only gets read/write_repl)."""
     b = ctx.bridge
 
     async def _read(port: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -151,7 +153,8 @@ def build_server(ctx: ToolContext, only: set[str] | None = None):
 
     async def _write(port: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
-            _check_board(ctx)
+            if check_board:
+                _check_board(ctx)
             cursor = await b.write(port, decode_ctrl(str(args.get("data", ""))))
         except HardwareError as e:
             return _err(str(e))
