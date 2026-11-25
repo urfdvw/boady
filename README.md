@@ -31,7 +31,7 @@ python run.py
   ```
   <project>/
   ├── src/        # goes to the board (code.py / main.py, lib/, CIRCUIT.md)
-  ├── boady.json  # project type, fixed at creation
+  ├── boady.json  # project type (fixed at creation) and board kind: "usb" or "rp2040js" (emulator), fixed at the first connection
   ├── CLAUDE.md   # references and general way of working
   ├── DESIGN.md   # goals and architecture
   └── README.md
