@@ -13,11 +13,17 @@ export function translate(lang: Lang, key: string, vars?: Record<string, string 
   return s;
 }
 
-/** Translate a backend error: known codes have a resource, otherwise shown as-is. */
+/**
+ * Translate a backend error: known codes have a resource, otherwise shown as-is.
+ * Errors are "code: detail"; the detail (e.g. Claude's answer when identification
+ * failed, or the two colliding file names) is kept after the translated text.
+ */
 export function translateError(lang: Lang, err: string): string {
-  const code = err.split(":")[0].trim();
+  const i = err.indexOf(":");
+  const code = (i < 0 ? err : err.slice(0, i)).trim();
+  const detail = i < 0 ? "" : err.slice(i + 1).trim();
   const key = `err.${code}`;
-  if (key in en) return translate(lang, key);
+  if (key in en) return detail ? `${translate(lang, key)} (${detail})` : translate(lang, key);
   return translate(lang, "common.error", { msg: err });
 }
 

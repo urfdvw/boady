@@ -20,4 +20,12 @@ describe("i18n", () => {
     expect(translateError("zh", "name_taken")).toBe("已有同名项目。");
     expect(translateError("en", "boom")).toBe("Error: boom");
   });
+
+  it("keeps the detail after a known error code", () => {
+    // the device label shows this: Claude's answer must not be swallowed
+    expect(translateError("en", "identify_failed: You've hit your 5-hour limit")).toBe(
+      "Could not identify the board. (You've hit your 5-hour limit)",
+    );
+    expect(translateError("zh", "case_collision: the board has both 'a.py' and 'A.py'")).toContain("'a.py' and 'A.py'");
+  });
 });
