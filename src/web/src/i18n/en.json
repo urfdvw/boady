@@ -209,5 +209,6 @@
   "device.connectEmulator": "Connect emulator (test project)",
   "emu.kind": "Emulator",
   "notice.board_kind_mismatch": "This project's board kind does not match the connected board ({msg}); nothing was pulled.",
-  "notice.emulator_other_project": "The connected emulator is another test project's board ({msg}); it was not bound to this project."
+  "notice.emulator_other_project": "The connected emulator is another test project's board ({msg}); it was not bound to this project.",
+  "err.symlink_in_lib": "src/lib (or something in it) is a symbolic link; boady does not manage libraries through links."
 }

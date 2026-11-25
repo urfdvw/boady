@@ -24,6 +24,23 @@ class LibraryError(Exception):
     pass
 
 
+def _check_lib(src: Path) -> None:
+    """Refuse library work when src/lib (or anything inside it) is a symbolic link:
+    installing, updating or uninstalling would then write or delete outside the mirror."""
+    lib = src / "lib"
+    if lib.is_symlink():
+        raise LibraryError("symlink_in_lib: src/lib is a symbolic link")
+    if not lib.is_dir():
+        return
+    import os
+
+    for dirpath, dirnames, filenames in os.walk(lib, followlinks=False):
+        for n in dirnames + filenames:
+            if (Path(dirpath) / n).is_symlink():
+                rel = (Path(dirpath) / n).relative_to(src).as_posix()
+                raise LibraryError(f"symlink_in_lib: {rel} is a symbolic link")
+
+
 def _circup() -> list[str]:
     exe = shutil.which("circup")
     return [exe] if exe else [sys.executable, "-m", "circup"]
@@ -89,6 +106,7 @@ def _mp_entries(src: Path) -> list[dict[str, Any]]:
 
 
 async def list_installed(project_type: str, src: Path) -> list[dict[str, Any]]:
+    _check_lib(src)
     if project_type == "micropython":
         return _mp_entries(src)
     installed = parse_freeze(await circup(src, "freeze"))
@@ -126,6 +144,7 @@ MIP_PKG_RE = re.compile(r"^(?:[A-Za-z0-9_][A-Za-z0-9_.\-]*|(?:github|gitlab|code
 
 
 async def install(project_type: str, src: Path, names: list[str], mpy_version: int | None = None) -> str:
+    _check_lib(src)
     if project_type == "micropython":
         from . import mip_mirror
 
@@ -144,12 +163,14 @@ async def install(project_type: str, src: Path, names: list[str], mpy_version: i
 
 
 async def update(project_type: str, src: Path) -> str:
+    _check_lib(src)
     if project_type == "micropython":
         raise LibraryError("not_available: mip has no update; install the package again")
     return await circup(src, "update", "--all")
 
 
 async def uninstall(project_type: str, src: Path, names: list[str]) -> str:
+    _check_lib(src)
     if project_type == "micropython":
         lib = (src / "lib").resolve()
         removed = []

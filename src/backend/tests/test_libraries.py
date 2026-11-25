@@ -107,3 +107,39 @@ def test_mirror_transport(tmp_path):
         t.fs_hashfile("lib/none.py", "sha256")
     with pytest.raises(CommandError):
         t.fs_writefile("../escape.py", b"x")
+
+
+
+async def test_library_work_refuses_a_linked_lib(tmp_path, fake_circup):
+    """Review 4, finding 4: uninstalling through a linked src/lib deleted a file outside the project."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sensor.py").write_text("keep")
+    src = tmp_path / "proj" / "src"
+    src.mkdir(parents=True)
+    (src / "boot_out.txt").write_text("Adafruit CircuitPython 9.2.1\n")
+    (src / "lib").symlink_to(outside)
+    for call in (
+        libraries.uninstall("micropython", src, ["sensor"]),
+        libraries.list_installed("micropython", src),
+        libraries.install("micropython", src, ["aioble"], None),
+        libraries.install("circuitpython", src, ["adafruit_bme280"]),
+        libraries.update("circuitpython", src),
+        libraries.uninstall("circuitpython", src, ["sensor"]),
+    ):
+        with pytest.raises(libraries.LibraryError, match="symlink_in_lib"):
+            await call
+    assert (outside / "sensor.py").read_text() == "keep"
+    assert not fake_circup.exists() or "install" not in fake_circup.read_text()
+
+
+async def test_library_work_refuses_a_link_inside_lib(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "x.py").write_text("keep")
+    src = tmp_path / "proj" / "src"
+    (src / "lib").mkdir(parents=True)
+    (src / "lib" / "pkg").symlink_to(outside)
+    with pytest.raises(libraries.LibraryError, match="lib/pkg"):
+        await libraries.uninstall("micropython", src, ["pkg"])
+    assert (outside / "x.py").exists()
