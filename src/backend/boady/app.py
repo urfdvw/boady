@@ -428,15 +428,17 @@ class App:
             await self.push_state()
             return
         p = self.project
-        if p is not None and (explicit or p.board_uid in (None, uid)) and p.type != runtime:
-            # runtime check first, independent of which board the project is bound to
-            await self.runtime_mismatch(p, runtime)
-            return
         kind = self.device_kind()
         owner = self.emulator_owner()
         if p is not None and owner and owner != p.id:
-            # an emulator is the virtual board of one test project; never bind it to another (D40)
+            # Another test project's emulator is not this project's board at all (D40): checked
+            # before the runtime, so opening a project of the other runtime does not close it
+            # because of a leftover emulator (the frontend disconnects that emulator).
             await self.notice(f"emulator_other_project: {uid}", "warning")
+            return
+        if p is not None and (explicit or p.board_uid in (None, uid)) and p.type != runtime:
+            # runtime check, independent of which board the project is bound to
+            await self.runtime_mismatch(p, runtime)
             return
         if p is not None and p.board_uid in (None, uid):
             if p.board and p.board != kind:

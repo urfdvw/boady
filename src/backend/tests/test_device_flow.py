@@ -484,3 +484,18 @@ async def test_new_project_does_not_inherit_another_projects_emulator(env, board
     assert app.table.get(b).board_uid is None and app.table.get(b).board is None
     r = await ws.action("device.push", {}, "p")
     assert not r["ok"] and "emulator_other_project" in r["error"]
+
+
+
+async def test_opening_other_runtime_project_with_leftover_emulator(env, board):
+    """Review 5, finding 3: A's CircuitPython emulator still connected must not close MicroPython project B."""
+    app, client = env
+    ws = await connect(client, app.token)
+    a = (await ws.action("project.create", {"name": "cpa", "type": "circuitpython"}, "a"))["result"]["project"]["id"]
+    await attach_emulator(ws, project=a)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    b = (await ws.action("project.create", {"name": "mpb", "type": "micropython"}, "b"))["result"]["project"]["id"]
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("emulator_other_project"), timeout=10)
+    assert app.project is not None and app.project.id == b
+    assert not any(m["type"] == "project.select_required" for m in ws.inbox)
