@@ -110,3 +110,10 @@ def test_apply_paths_only_touches_given_files_and_refuses_links(tmp_path):
     with pytest.raises(ValueError):
         sync.apply_paths(src, {"lib/x.py": b64(b"x")}, ["lib/x.py"])
     assert not (outside / "x.py").exists()
+
+
+def test_canonical_rel():
+    for ok in ("code.py", "lib/x.py", "a/b/c.txt", ".hidden"):
+        assert sync.canonical_rel(ok) == ok
+    for bad in ("", "./x", "x/.", "a//b", "a/../b", "/x", "x/", "a\\b", None, 3):
+        assert sync.canonical_rel(bad) is None

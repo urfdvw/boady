@@ -106,7 +106,12 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] 
     src = _src(root)
     # fingerprint first: everything changed after this moment is asked about again,
     # including edits made while the first approval card is waiting
-    scope = None if paths is None else {p.strip("/") for p in paths if p.strip("/")}
+    scope = None
+    if paths is not None:
+        bad = [p for p in paths if sync.canonical_rel(p) is None]
+        if bad or not paths:
+            raise HardwareError(f"paths must be plain src-relative paths like 'lib/x.py' (got {bad[0]!r})" if bad else "paths is empty")
+        scope = set(paths)
     if scope is not None and any(sync.excluded(p) for p in scope):
         raise HardwareError("These files are never synced: " + ", ".join(sorted(p for p in scope if sync.excluded(p))))
 

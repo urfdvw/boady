@@ -415,3 +415,31 @@ async def test_first_real_connection_marks_usb(env, board):
     await answer_pull(ws, {"code.py": b"x"})
     await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
     assert app.table.get(pid).board == "usb"
+
+
+
+async def test_pull_refuses_non_canonical_paths(env, board):
+    """Review 4, finding 1: './code.py' must neither skip the overwrite check nor delete the local file."""
+    from boady import mcp_tools
+    from boady.hardware import HardwareError
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "canon", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"board\n"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    src = app.project.path / "src"
+    (src / "code.py").write_text("local edit\n")
+    for bad in (["./code.py"], ["lib/../code.py"], ["/code.py"], ["code.py/"], ["a//b"], ["lib\\x.py"], []):
+        task = asyncio.create_task(mcp_tools.pull_from_device(app.tool_ctx, paths=bad))
+        # behave like a real frontend: answer a board read if one is made
+        try:
+            req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.read_all", timeout=1)
+            await ws.send({"type": "hw.response", "id": req["id"], "ok": True, "result": {"files": {"code.py": base64.b64encode(b"board\n").decode()}}})
+        except asyncio.TimeoutError:
+            pass
+        with pytest.raises(HardwareError):
+            await task
+        assert not any(m["type"] == "permission_request" for m in ws.inbox), bad
+        assert (src / "code.py").read_text() == "local edit\n", bad

@@ -134,6 +134,9 @@ def _through_link(src: Path, rel: str) -> bool:
 
 def apply_paths(src: Path, board_files: dict[str, str], paths: list[str]) -> dict[str, list[str]]:
     """Make only ``paths`` in the mirror equal to the board; nothing else changes."""
+    bad = [p for p in paths if canonical_rel(p) is None]
+    if bad:
+        raise ValueError(f"not a canonical path: {bad[0]!r}")
     board = {k.strip("/"): v for k, v in board_files.items()}
     added, modified, deleted = [], [], []
     for rel in paths:
@@ -165,6 +168,21 @@ def _prune_empty_dirs(root: Path) -> None:
             d.rmdir()
         except OSError:
             pass
+
+
+def canonical_rel(rel: object) -> str | None:
+    """``rel`` if it is a canonical src-relative path (``lib/x.py``), else None.
+
+    No guessing: ``./x``, ``a//b``, ``a/../b``, leading or trailing ``/``,
+    backslashes and empty parts are refused, because one path must mean one
+    file both when checking for local edits and when writing or deleting.
+    """
+    if not isinstance(rel, str) or not rel or "\\" in rel or "\0" in rel:
+        return None
+    parts = rel.split("/")
+    if any(p in ("", ".", "..") for p in parts):
+        return None
+    return rel
 
 
 def safe_mirror_file(src: Path, rel: str) -> Path | None:
