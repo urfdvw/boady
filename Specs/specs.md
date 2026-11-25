@@ -58,14 +58,14 @@ Nov 21, 2026 · @River
 **工具配置（全部由后端包办，前端不接触 MCP）**
 
 - 自带文件工具（Read、Edit、Write、Glob、Grep）保留，作用在镜像上。
-- Bash 只放行 git、circup、mpremote mip，或将它们封装为自定义工具后禁用 Bash。
+- Bash 保留，但只放行单条白名单命令：git（固定子命令表，禁全局选项与写配置）和 `circup ... --path src`；`mpremote` 一律拒绝（后端接触不到板子）。MicroPython 装库走 MCP 工具 `install_library`（D3、D30）。
 - 硬件工具用 SDK 的进程内工具（`create_sdk_mcp_server` + `@tool`）定义，见「MCP 工具与前后端分工」。
 
 **权限审批**
 
 三层：静态规则（`allowed_tools` / `disallowed_tools` / `permission_mode`）、动态审批（`can_use_tool` 推给前端弹窗，等待结果）、Hooks（仅用于 PreToolUse 硬拦截与审计日志）。不设任何自动触发同步或 git 操作的 hook。
 
-- 默认放行：镜像内读写、库安装到镜像（circup、mpremote mip）、git status/diff/log、`read_repl` / `read_data`、`write_repl` / `write_data`、`sync_from_device`、`compare_with_device`
+- 默认放行：镜像内读写、库安装到镜像（`install_library` / `list_libraries`，CircuitPython 另可用白名单 circup）、git status/diff/log、`read_repl` / `read_data`、`write_repl` / `write_data`、`sync_from_device`、`compare_with_device`
 - 需确认：git commit/reset/push 等会改变仓库的操作、`sync_to_device`、镜像以外的任何操作
 - 代码文件只通过 `sync_to_device` 上板；REPL 写入修改板上文件的风险由系统提示约束，并由上传前的干净检查兜底（见「MCP 工具与前后端分工」）。
 
@@ -86,13 +86,15 @@ MCP 只提供抽象过的文件与串口接口：项目类型（CircuitPython / 
 
 | 工具 | 参数 | 返回 | 说明 |
 | --- | --- | --- | --- |
-| `sync_from_device` | 无 | 新增 / 修改 / 删除的文件列表 | 把板上全部文件拉到镜像 `src/`，结果留在 git 工作区；镜像有未提交修改时先提醒用户，用户拒绝则返回“用户拒绝” |
+| `sync_from_device` | `paths`（可选，src 相对路径） | 新增 / 修改 / 删除的文件列表 | 把板上全部文件（或只把 `paths` 中的文件）拉到镜像 `src/`，结果留在 git 工作区；镜像有未提交修改时先提醒用户，用户拒绝则返回“用户拒绝” |
 | `compare_with_device` | 无 | 自上次同步以来板上改动的文件、板与镜像的差异 | 把板上文件拉到缓冲区对比，不写镜像；默认放行 |
-| `sync_to_device` | 无 | 写入 / 删除的文件列表 | 把镜像 `src/` 同步到板子；需审批 |
+| `sync_to_device` | 无 | 写入 / 删除的文件列表、同步前的 REPL 游标 `since` | 把镜像 `src/` 同步到板子；需审批 |
 | `read_repl` | `since`（游标，可选）、`tail`（最近 N 行，可选）、`wait_for`（字符串，可选）、`timeout_ms` | 文本、新游标、是否等到 `wait_for` | 读 REPL 串口历史 |
 | `write_repl` | `data`（文本，用 `\x01`–`\x04` 转义表示 Ctrl-A–D） | 写入时的游标 | 写 REPL 串口 |
 | `read_data` | 同 `read_repl` | 同 `read_repl` | 读数据串口历史 |
 | `write_data` | 同 `write_repl` | 同 `write_repl` | 写数据串口 |
+| `install_library` | `names`（circup bundle 名；MicroPython 为 mip 包名、`github:org/repo[/path]` 或 URL，可带 `@版本`） | 安装输出 | 装库到镜像 `src/lib/`，下次 `sync_to_device` 上板；默认放行 |
+| `list_libraries` | 无 | 已装库列表 | 列出镜像 `src/lib/` 中的库；默认放行 |
 
 **规则**
 
@@ -371,7 +373,7 @@ REPL 串口的读写两种类型完全相同；唯一差别是数据串口通常
 
 - **CircuitPython（circup）**：连接时把板上的 `boot_out.txt` 拉入镜像；circup 用 `--path` 指向镜像，安装 / 更新 / 卸载库到 `lib/`，bundle 缓存在后端。
 - **MicroPython（mpremote mip）**：同样只写入镜像的 `src/lib/`。做法（已查证 mpremote 1.29.0 源码）：直接调用 mpremote 的 `mip._install_package(transport, package, index, target, version, mpy)`，传入一个自写的本地 transport。mip 模块对 transport 只用到 `fs_exists`、`fs_mkdir`、`fs_hashfile`、`fs_writefile`、`exec`、`eval` 六个方法：前四个映射到镜像目录，`exec` 忽略，`eval` 只被用来查询 `.mpy` 版本，返回项目表中记录的值。`target` 显式传 `lib`（对应镜像的 `src/lib/`），就不会去读板子的 `sys.path`。下载、依赖解析、`github:` 地址改写全部复用 mpremote。从未连过板子时以 `mpy=False` 安装 `.py` 源码版本。`_install_package` 是内部函数，因此锁定 mpremote 版本，升级时回归测试。
-- agent 可直接调用（白名单 Bash 或封装工具），用户通过前端 `action` 调用。
+- agent 经 MCP 工具 `install_library` / `list_libraries` 调用（CircuitPython 另可用白名单 Bash `circup --path src`），用户通过前端 `action` 调用。
 
 **Git 备份**
 
@@ -441,7 +443,7 @@ REPL 串口的读写两种类型完全相同；唯一差别是数据串口通常
 - [ ] Termux 中 `claude setup-token` 实测（`/login` 已确认可登录）——需主人
 - [ ] Termux Play 版上 Claude Code 与 RUN\_COMMAND 实测——需主人，预检阶段
 - [ ] 各标签内部的布局与交互：已有初稿，主人试用后补充——需主人
-- [ ] Bash 白名单还是全部封装为工具
+- [x] Bash 白名单还是全部封装为工具：白名单（git、`circup --path src`），装库另有 MCP 工具（D3、D30）
 - [ ] APK 是否用 Capacitor，还是自建原生外壳 + WebView
 
 ## 工具本身的项目：boady
