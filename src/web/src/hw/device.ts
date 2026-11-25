@@ -274,28 +274,45 @@ export class DeviceManager implements Hardware {
     this.bump();
   }
 
-  private async withRaw<T>(signal: AbortSignal, fn: (r: RawRepl) => Promise<T>): Promise<T> {
-    const c = this.port("repl");
+  /**
+   * A whole sync step: holds the REPL write lock and the busy flag (console
+   * read-only, agent serial writes refused) from start to end, with the
+   * "syncing" markers around it.
+   */
+  private syncLocked<T>(fn: () => Promise<T>): Promise<T> {
     return this.exclusive(async () => {
       this.busy = "sync";
       this.marker(SYNC_START);
-      const r = new RawRepl(c, signal);
-      this.tap = r;
       try {
-        await r.enter();
-        return await fn(r);
+        return await fn();
       } finally {
-        try {
-          await r.exit();
-        } catch {
-          /* port gone */
-        }
-        await sleep(50);
-        this.tap = null;
         this.busy = null;
         this.marker(SYNC_END);
       }
     });
+  }
+
+  /** One raw REPL session; the caller must hold the lock (syncLocked). */
+  private async rawSession<T>(signal: AbortSignal, fn: (r: RawRepl) => Promise<T>): Promise<T> {
+    const r = new RawRepl(this.port("repl"), signal);
+    this.tap = r;
+    try {
+      await r.enter();
+      return await fn(r);
+    } finally {
+      try {
+        await r.exit();
+      } catch {
+        /* port gone */
+      }
+      await sleep(50);
+      this.tap = null;
+    }
+  }
+
+  private withRaw<T>(signal: AbortSignal, fn: (r: RawRepl) => Promise<T>): Promise<T> {
+    this.port("repl");
+    return this.syncLocked(() => this.rawSession(signal, fn));
   }
 
   // ---- CIRCUITPY drive ----
@@ -388,22 +405,23 @@ export class DeviceManager implements Hardware {
     const written = Object.keys(files).sort();
     const deleted = del.filter((p) => !excluded(p)).sort();
     if ((await this.pickChannel()) === "msc") {
-      let prev = true;
-      await this.withRaw(signal, async (r) => {
-        prev = await cpAutoreloadOff(r);
+      // one locked section from "autoreload off" to "autoreload restored":
+      // nobody can type Ctrl-D into a half-written sync
+      await this.syncLocked(async () => {
+        const prev = await this.rawSession(signal, cpAutoreloadOff);
+        try {
+          for (const p of written) {
+            if (signal.aborted) throw new Error("cancelled");
+            await msc.writeFile(this.drive!, p, fromBase64(files[p]));
+          }
+          for (const p of deleted) {
+            if (signal.aborted) throw new Error("cancelled");
+            await msc.removeFile(this.drive!, p);
+          }
+        } finally {
+          await this.rawSession(AbortSignal.timeout(20000), (r) => cpAutoreloadRestore(r, prev)).catch(() => {});
+        }
       });
-      try {
-        for (const p of written) {
-          if (signal.aborted) throw new Error("cancelled");
-          await msc.writeFile(this.drive!, p, fromBase64(files[p]));
-        }
-        for (const p of deleted) {
-          if (signal.aborted) throw new Error("cancelled");
-          await msc.removeFile(this.drive!, p);
-        }
-      } finally {
-        await this.withRaw(new AbortController().signal, (r) => cpAutoreloadRestore(r, prev)).catch(() => {});
-      }
       return { written, deleted, channel: "msc", restarted: false };
     }
     let restart = false;

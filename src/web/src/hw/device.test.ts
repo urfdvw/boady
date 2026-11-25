@@ -10,6 +10,7 @@ function fakeCircuitPython(dm: DeviceManager, opts: { hashlib: boolean }) {
   const emit = (s: string) => queueMicrotask(() => (dm as any).onData("repl", utf8(s)));
   const run = (code: string): [string, string] => {
     const P = (m: RegExpMatchArray | null) => (m ? fromUtf8(parsePyBytes(m[1])) : "");
+    if (code.includes("print(supervisor.runtime.autoreload)")) return ["True\r\n", ""];
     if (code.includes("hasattr(storage")) return [`True ${state.usbDisabled ? "False" : "True"}\r\n`, ""];
     if (code.includes("unsafe_disable_usb_drive()")) return ((state.usbDisabled = true), ["", ""]);
     if (code.includes("print(storage.getmount('/').readonly)")) return [state.usbDisabled ? "False\r\n" : "True\r\n", ""];
@@ -173,6 +174,26 @@ describe("MSC channel", () => {
     root.onRemove = () => ac.abort(); // cancel right after the first deletion
     await expect(dm.handle("fs.apply", { files: {}, delete: ["a.py", "b.py", "c.py"] }, ac.signal)).rejects.toThrow("cancelled");
     expect([...root.children.keys()].sort()).toEqual(["b.py", "boot_out.txt", "c.py"]);
+  });
+});
+
+describe("MSC lock", () => {
+  it("keeps the console read-only for the whole MSC sync (review 2, finding 6)", async () => {
+    const { dm } = setup();
+    const { state } = fakeCircuitPython(dm, { hashlib: true });
+    const root = withDrive(dm);
+    let duringWrite: unknown = "not tried";
+    root.onRemove = () => {
+      duringWrite = dm.consoleWrite("repl", "\x04").then(
+        () => "sent",
+        (e) => e.message,
+      );
+    };
+    await dm.handle("fs.apply", { files: {}, delete: ["a.py"] }, new AbortController().signal);
+    expect(await duringWrite).toBe("read_only");
+    expect(dm.busy).toBeNull();
+    expect(state.sent).toContain("supervisor.runtime.autoreload=False");
+    expect(state.sent).toContain("supervisor.runtime.autoreload=True");
   });
 });
 
