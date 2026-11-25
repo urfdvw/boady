@@ -20,10 +20,15 @@ export function VersionTab({ backend }: { backend: Backend }) {
       setDiff("");
       return;
     }
+    // an answer for a file that is no longer selected (or an older status) is dropped (review 13)
+    let current = true;
     backend
       .action("git.diff", { path: selected })
-      .then((r) => setDiff(r.diff))
-      .catch((e) => setDiff(String(e.message)));
+      .then((r) => current && setDiff(r.diff))
+      .catch((e) => current && setDiff(String(e.message)));
+    return () => {
+      current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, st?.git.status]);
 
