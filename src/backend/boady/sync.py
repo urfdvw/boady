@@ -280,7 +280,8 @@ def manifest_of(files_b64: dict[str, str]) -> dict[str, str]:
 
 
 def text_diffs(src: Path, board_b64: dict[str, str], paths: list[str], max_chars: int = 6000) -> dict[str, str]:
-    """Unified diffs board -> mirror for text files among ``paths`` (truncated)."""
+    """Unified diffs mirror -> board for text files among ``paths`` (truncated):
+    ``+`` lines are what the board has, ``-`` lines what the mirror has."""
     import difflib
 
     out: dict[str, str] = {}
@@ -295,7 +296,7 @@ def text_diffs(src: Path, board_b64: dict[str, str], paths: list[str], max_chars
         except (UnicodeDecodeError, ValueError, OSError):
             out[rel] = "(binary)"
             continue
-        d = "".join(difflib.unified_diff(board.splitlines(True), mirror.splitlines(True), f"board/{rel}", f"mirror/{rel}"))
+        d = "".join(difflib.unified_diff(mirror.splitlines(True), board.splitlines(True), f"mirror/{rel}", f"board/{rel}"))
         out[rel] = d[:budget]
         budget -= len(out[rel])
     return out

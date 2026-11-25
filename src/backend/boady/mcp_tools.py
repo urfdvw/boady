@@ -224,7 +224,9 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
     after the last pull or upload) — changes made on the board itself, e.g. by
     the REPL or a running program. ``board_only`` / ``mirror_only`` / ``differs``:
     the board against the mirror (includes the mirror's own new edits).
-    ``diffs``: short board->mirror diffs of the changed text files.
+    ``diffs``: short mirror->board diffs of those files (``+`` = the board's
+    lines). ``edited_in_mirror``: files of ``changed_on_board`` that were also
+    edited in the mirror since the baseline; their diff mixes both changes.
     """
     root = ctx.project_dir()
     if root is None:
@@ -246,6 +248,8 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
         "mirror_only": sorted(set(mirror) - set(board)),
         "differs": sorted(p for p in set(board) & set(mirror) if board[p] != mirror[p]),
     }
+    if baseline is not None:
+        out["edited_in_mirror"] = sorted(p for p in out["changed_on_board"] if mirror.get(p) != baseline.get(p))
     interesting = out["changed_on_board"] if baseline is not None else out["board_only"] + out["differs"]
     out["diffs"] = sync.text_diffs(src, board_files, interesting)
     if baseline is None:

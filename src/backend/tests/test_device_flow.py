@@ -293,8 +293,13 @@ async def test_compare_with_device_buffers_and_finds_board_changes(env, board, m
     r = await compare({**on_board, "data.txt": b"2\n"})
     assert r["changed_on_board"] == ["data.txt"]
     d = r["diffs"]["data.txt"]
-    assert "\n-2\n" in d and "\n+1\n" in d  # board -> mirror
+    assert "\n+2\n" in d and "\n-1\n" in d  # mirror -> board: + is the board (review 7)
+    assert r["edited_in_mirror"] == []  # only the board changed data.txt: the diff is the board's change
     assert (src / "data.txt").read_text() == "1\n"
+
+    # 2b) the board changed code.py too, which the agent also edited: the diff mixes both
+    r = await compare({**on_board, "code.py": b"print('board')\n"})
+    assert r["changed_on_board"] == ["code.py"] and r["edited_in_mirror"] == ["code.py"]
 
     # 3) after an upload the baseline is the mirror
     task = asyncio.create_task(mcp_tools.push_to_device(app.tool_ctx))
