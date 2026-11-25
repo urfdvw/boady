@@ -208,5 +208,6 @@
   "device.connectUsb": "连接 USB 板子",
   "device.connectEmulator": "连接模拟器（测试项目）",
   "emu.kind": "模拟器",
-  "notice.board_kind_mismatch": "本项目的板子类型与已连接的板子不符（{msg}），未拉取。"
+  "notice.board_kind_mismatch": "本项目的板子类型与已连接的板子不符（{msg}），未拉取。",
+  "notice.emulator_other_project": "已连接的模拟器是另一个测试项目的板子（{msg}），未绑定到本项目。"
 }

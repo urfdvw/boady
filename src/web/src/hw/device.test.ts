@@ -172,6 +172,21 @@ describe("test projects use only their emulator (D40)", () => {
     expect(closed).toBe(true);
   });
 
+  it("drops another test project's emulator when a project is opened (review 4, finding 3)", async () => {
+    const { dm } = setup();
+    let closed = false;
+    const link: any = { info: {}, port: null, emulated: { runtime: "circuitpython", firmware: "x", project: "A" }, onData: () => {}, onLost: () => {}, write: async () => {}, close: async () => void (closed = true) };
+    await dm.connectEmulator(link);
+    (dm as any).sink.state = () => ({ project: { id: "A", type: "circuitpython", board: "rp2040js" }, device: {}, serial: { lock: {} } });
+    dm.onState();
+    expect(dm.attached).toBe(true); // its own project: kept
+    (dm as any).sink.state = () => ({ project: { id: "B", type: "circuitpython", board: null }, device: {}, serial: { lock: {} } });
+    dm.onState();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(dm.attached).toBe(false);
+    expect(closed).toBe(true);
+  });
+
   it("does not auto-connect real ports for a test project", async () => {
     const { dm } = setup();
     (dm as any).caps = { serial: true, msc: false };

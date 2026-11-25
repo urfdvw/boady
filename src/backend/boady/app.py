@@ -433,6 +433,11 @@ class App:
             await self.runtime_mismatch(p, runtime)
             return
         kind = self.device_kind()
+        owner = self.emulator_owner()
+        if p is not None and owner and owner != p.id:
+            # an emulator is the virtual board of one test project; never bind it to another (D40)
+            await self.notice(f"emulator_other_project: {uid}", "warning")
+            return
         if p is not None and p.board_uid in (None, uid):
             if p.board and p.board != kind:
                 # a test project only uses its emulator, a real project only real boards (D40)
@@ -487,11 +492,19 @@ class App:
         """Board kind of the connected device: the emulator or a real USB board."""
         return "rp2040js" if (self.bridge.device.usb or {}).get("emulator") else "usb"
 
+    def emulator_owner(self) -> str | None:
+        """The test project whose virtual board is connected (None for real boards)."""
+        emu = (self.bridge.device.usb or {}).get("emulator")
+        return emu.get("project") if isinstance(emu, dict) else None
+
     def board_error(self) -> str | None:
         """Reason why the connected board must not be written to for the open project."""
         d, p = self.bridge.device, self.project
         if p is None or not d.attached:
             return None
+        owner = self.emulator_owner()
+        if owner and owner != p.id:
+            return "emulator_other_project: the connected emulator is the virtual board of another test project."
         if p.board and p.board != self.device_kind():
             return f"board_kind_mismatch: the project uses {p.board}, the connected board is {self.device_kind()}."
         if not d.uid:

@@ -99,7 +99,12 @@ export class DeviceManager implements Hardware {
 
   /** A test project uses only its emulator: drop a real board that auto-connected before the project was known (D40). */
   onState(): void {
-    if (this.sink?.state()?.project?.board === "rp2040js" && this.attached && !this.emulated) void this.disconnect(false);
+    const project = this.sink?.state()?.project;
+    if (!this.attached) return;
+    if (this.emulated) {
+      // an emulator is one test project's board: never carried over to another project
+      if (this.emulated.project && this.emulated.project !== project?.id) void this.disconnect(false);
+    } else if (project?.board === "rp2040js") void this.disconnect(false);
   }
 
   /** Called after the backend accepted the hello: (re)announce the board. */

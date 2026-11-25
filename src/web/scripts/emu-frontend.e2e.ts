@@ -80,7 +80,7 @@ it(`emulated ${type} board end to end`, async () => {
     }
   };
   const attachedAt = backend.items.length; // ignore notices from earlier runs in the chat history
-  await dm.connectEmulator(new EmulatorLink(host, { runtime: type, firmware }));
+  await dm.connectEmulator(new EmulatorLink(host, { runtime: type, firmware, project: backend.state!.project!.id }));
   console.log("[e2e] emulator attached; waiting for identification (real Claude)");
 
   const dev = await until("identification", () => {

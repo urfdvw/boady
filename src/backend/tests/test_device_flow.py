@@ -368,8 +368,9 @@ async def test_pull_selected_paths_keeps_local_edits(env, board):
     assert not any(m["type"] == "permission_request" for m in ws.inbox)
 
 
-async def attach_emulator(ws):
-    await ws.send({"type": "device.attached", "usb": {"vid": None, "pid": None, "msc": None, "emulator": {"runtime": "circuitpython", "firmware": "x"}}, "ports": ["repl"]})
+async def attach_emulator(ws, project=None):
+    emu = {"runtime": "circuitpython", "firmware": "x", **({"project": project} if project else {})}
+    await ws.send({"type": "device.attached", "usb": {"vid": None, "pid": None, "msc": None, "emulator": emu}, "ports": ["repl"]})
 
 
 async def test_first_connection_fixes_board_kind(env, board):
@@ -465,3 +466,21 @@ async def test_partial_pull_keeps_other_board_changes_visible(env, board):
     await answer_pull(ws, changed)
     r = await task
     assert r["changed_on_board"] == ["b.txt"]
+
+
+
+async def test_new_project_does_not_inherit_another_projects_emulator(env, board):
+    """Review 4, finding 3: each test project keeps its own virtual board."""
+    app, client = env
+    ws = await connect(client, app.token)
+    a = (await ws.action("project.create", {"name": "ta", "type": "circuitpython"}, "a"))["result"]["project"]["id"]
+    await attach_emulator(ws, project=a)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    assert app.table.get(a).board_uid == BOARD["uid"]
+    # A's emulator still connected while B is created
+    b = (await ws.action("project.create", {"name": "tb", "type": "circuitpython"}, "b"))["result"]["project"]["id"]
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("emulator_other_project"), timeout=10)
+    assert app.table.get(b).board_uid is None and app.table.get(b).board is None
+    r = await ws.action("device.push", {}, "p")
+    assert not r["ok"] and "emulator_other_project" in r["error"]

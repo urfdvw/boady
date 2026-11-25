@@ -46,7 +46,7 @@ export class EmulatorLink implements SerialLink {
 
   constructor(
     private host: PicoHost,
-    readonly emulated: { runtime: string; firmware: string },
+    readonly emulated: { runtime: string; firmware: string; project?: string },
     /** Called with the flash image on checkpoint() and close(), for persistence. */
     private save: (flash: Uint8Array) => Promise<void> = async () => {},
   ) {

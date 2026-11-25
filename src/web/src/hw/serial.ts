@@ -13,7 +13,7 @@ export interface SerialLink {
   /** The Web Serial port, or null for the emulator. */
   readonly port: SerialPort | null;
   /** Set for the testing-only emulator. */
-  readonly emulated?: { runtime: string; firmware: string };
+  readonly emulated?: { runtime: string; firmware: string; /** owning test project */ project?: string };
   onData: (b: Uint8Array) => void;
   onLost: () => void;
   write(b: Uint8Array): Promise<void>;

@@ -181,5 +181,5 @@ export async function startEmulator(projectId: string, rt: Runtime): Promise<Emu
     host.stop();
     throw e;
   }
-  return new EmulatorLink(host, { runtime: rt, firmware: fw.label }, (f) => store(projectId, { flash: f, uid: saved.uid }));
+  return new EmulatorLink(host, { runtime: rt, firmware: fw.label, project: projectId }, (f) => store(projectId, { flash: f, uid: saved.uid }));
 }
