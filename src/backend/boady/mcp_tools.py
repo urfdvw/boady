@@ -235,11 +235,18 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
         raise HardwareError("Device not connected.")
     _check_board(ctx)
     src = _src(root)
-    res = await ctx.bridge.request("fs.read_all", {}, timeout=300) or {}
-    board_files = {k.strip("/"): v for k, v in res.get("files", {}).items() if k.strip("/") and not sync.excluded(k)}
-    board = sync.manifest_of(board_files)
     mirror = sync.manifest(src)
     baseline = ctx.get_baseline()
+    # Files whose board hash equals a known one are not transferred (``same``). Every file
+    # that needs a diff differs from what is sent here: the baseline when there is one
+    # (diffs of changed_on_board), else the mirror (diffs of board_only / differs).
+    known = baseline if baseline is not None else mirror
+    res = await ctx.bridge.request("fs.read_all", {"known": known}, timeout=300) or {}
+    board_files = {k.strip("/"): v for k, v in res.get("files", {}).items() if k.strip("/") and not sync.excluded(k)}
+    board = sync.manifest_of(board_files)
+    for p in res.get("same") or []:
+        if isinstance(p, str) and p in known and p not in board and not sync.excluded(p):
+            board[p] = known[p]
     out: dict[str, Any] = {
         "changed_on_board": None if baseline is None else sorted(
             p for p in set(board) | set(baseline) if board.get(p) != baseline.get(p)

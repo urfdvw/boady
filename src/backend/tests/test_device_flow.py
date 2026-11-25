@@ -311,6 +311,33 @@ async def test_compare_with_device_buffers_and_finds_board_changes(env, board, m
     assert app.get_baseline()["code.py"] == mcp_tools.sync.sha256(b"print('fixed')\n")
 
 
+async def test_compare_only_transfers_files_the_backend_does_not_know(env, board):
+    """Review 7, prompt finding 5: the pre-upload check sends the known hashes; the
+    frontend skips unchanged files (``same``) instead of transferring all of lib/."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "fast", "type": "micropython"})
+    BOARD["runtime"] = "micropython"
+    try:
+        await attach(ws)
+        on_board = {"main.py": b"print(1)\n", "lib/big.py": b"x" * 5000, "data.txt": b"1\n"}
+        await answer_pull(ws, on_board)
+        await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+        task = asyncio.create_task(mcp_tools.compare_with_device(app.tool_ctx))
+        req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.read_all", timeout=10)
+        assert set(req["params"]["known"]) == set(on_board)
+        changed = base64.b64encode(b"2\n").decode()
+        await ws.send({"type": "hw.response", "id": req["id"], "ok": True,
+                       "result": {"files": {"data.txt": changed}, "same": ["main.py", "lib/big.py", "nope.py"]}})
+        r = await task
+        assert r["changed_on_board"] == ["data.txt"] and r["mirror_only"] == [] and r["board_only"] == []
+        assert r["differs"] == ["data.txt"] and "+2" in r["diffs"]["data.txt"]
+    finally:
+        BOARD["runtime"] = "circuitpython"
+
+
 async def test_compare_without_baseline_says_so(env, board):
     from boady import mcp_tools
 

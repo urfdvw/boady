@@ -175,6 +175,18 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       const again = await dm.handle("fs.plan", { manifest }, signal());
       expect(again.need).toEqual([]);
 
+      // compare_with_device: files whose hash the backend already knows are not transferred
+      const known = { ...manifest, "lib/helper.py": "0".repeat(64) };
+      const cmp = await dm.handle("fs.read_all", { known }, signal());
+      if (runtime === "micropython") {
+        expect(Object.keys(cmp.files)).toEqual(["lib/helper.py"]);
+        expect(cmp.same.sort()).toEqual(Object.keys(manifest).filter((p) => p !== "lib/helper.py").sort());
+      } else {
+        // CircuitPython's Pico build has no hashlib: everything is read, as before
+        expect(cmp.same).toEqual([]);
+        expect(Object.keys(cmp.files).sort()).toEqual(Object.keys(manifest).sort());
+      }
+
       // pull everything back
       const all = await dm.handle("fs.read_all", {}, signal());
       expect(Array.from(fromBase64(all.files["data/blob.bin"]))).toEqual(Array.from(bin));

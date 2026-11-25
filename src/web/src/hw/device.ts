@@ -6,7 +6,7 @@
  */
 import type { Hardware, HardwareCaps, HwSink } from "../adapters/types";
 import { fromBase64, fromUtf8, sha256hex, sleep, toBase64, utf8 } from "./bytes";
-import { hashFiles, listFiles, readFile, removeFiles, writeVerified } from "./boardFs";
+import { hashFiles, hashOnBoard, listFiles, readFile, removeFiles, writeVerified } from "./boardFs";
 import { cpAutoreloadOff, cpAutoreloadRestore, cpFinishWrite, cpPrepareWrite, cpRecover, type CpWriteState } from "./cpAccess";
 import * as msc from "./msc";
 import { PlotBuffer } from "./plot";
@@ -400,7 +400,7 @@ export class DeviceManager implements Hardware {
         return {};
       }
       case "fs.read_all":
-        return this.readAll(signal);
+        return this.readAll(signal, params.known);
       case "fs.plan":
         return this.planSync(params.manifest || {}, signal);
       case "fs.apply":
@@ -410,8 +410,14 @@ export class DeviceManager implements Hardware {
     }
   }
 
-  private async readAll(signal: AbortSignal) {
+  /**
+   * All board files. ``known`` (path -> sha256): over serial, a file whose board hash
+   * equals its known hash is listed in ``same`` instead of being transferred (hashing
+   * on the board is much cheaper than printing the bytes). The drive is read directly.
+   */
+  private async readAll(signal: AbortSignal, known?: Record<string, string>) {
     const files: Record<string, string> = {};
+    const same: string[] = [];
     if ((await this.pickChannel()) === "msc") {
       for (const [p, f] of await msc.walk(this.drive!)) {
         if (signal.aborted) throw new Error("cancelled");
@@ -420,9 +426,15 @@ export class DeviceManager implements Hardware {
       return { files, channel: "msc" };
     }
     await this.withRaw(signal, async (r) => {
-      for (const e of await listFiles(r, this.skip())) if (!excluded(e.path)) files[e.path] = toBase64(await readFile(r, e.path));
+      const paths = (await listFiles(r, this.skip())).map((e) => e.path).filter((p) => !excluded(p));
+      const check = known ? paths.filter((p) => typeof known[p] === "string") : [];
+      const hashes = check.length ? await hashOnBoard(r, check) : null; // null: no hashlib, read everything
+      for (const p of paths) {
+        if (hashes && known && hashes[p] === known[p]) same.push(p);
+        else files[p] = toBase64(await readFile(r, p));
+      }
     });
-    return { files, channel: "serial" };
+    return { files, same, channel: "serial" };
   }
 
   private async planSync(manifest: Record<string, string>, signal: AbortSignal) {
