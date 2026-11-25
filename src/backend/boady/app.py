@@ -77,6 +77,8 @@ class App:
         self.tool_ctx.get_baseline = self.get_baseline
         self.tool_ctx.set_baseline = self.set_baseline
         self.tool_ctx.get_baseline_texts = self.get_baseline_texts
+        # a DeviceState is replaced on every attach/detach, so its identity names one connection
+        self.tool_ctx.binding = lambda: (self.project.id if self.project else None, id(self.bridge.device), self.bridge.device.uid)
         self.tool_ctx.project_info = lambda: (self.project.type, self.project.mpy_version) if self.project else None
         self._tasks: set[asyncio.Task] = set()
         self._state_seq = itertools.count(1)

@@ -344,3 +344,44 @@ async def test_an_old_projects_state_never_overtakes_the_new_one(env, monkeypatc
     assert not r["ok"] and r["error"] == "project_changed"
     assert (app.project.path / "src" / "code.py").read_text() != "for A"
     assert (await ws.action("file.write", {"path": "src/code.py", "text": "for B", "project": b}, "7"))["ok"]
+
+
+async def test_a_started_pull_never_continues_for_another_project_and_board(env, board, monkeypatch):
+    """Review 14, finding 1: B's board content went into A's mirror and the baseline into B."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    a = (await ws.action("project.create", {"name": "a", "type": "circuitpython"}, "1"))["result"]["project"]["id"]
+    b = (await ws.action("project.create", {"name": "b", "type": "circuitpython"}, "2"))["result"]["project"]["id"]
+    await ws.action("project.select", {"id": a}, "3")
+    set_device(app, uid="UID-A", runtime="circuitpython")
+    app.table.update(a, board_uid="UID-A")
+    app.table.update(b, board_uid="UID-B")
+    app.project = app.table.get(a)
+    a_src = app.project.path / "src"
+    before = {p.name: p.read_bytes() for p in a_src.iterdir()}
+    real, gate = mcp_tools.gitops.status, asyncio.Event()
+
+    async def slow(root):
+        if root.name == "a":
+            await gate.wait()
+        return await real(root)
+
+    monkeypatch.setattr(mcp_tools.gitops, "status", slow)
+    pull = asyncio.create_task(mcp_tools.pull_from_device(app.tool_ctx))
+    await asyncio.sleep(0.05)
+    await ws.action("project.select", {"id": b}, "4")  # the user switches to B ...
+    set_device(app, uid="UID-B", runtime="circuitpython")  # ... and connects B's board
+    gate.set()
+
+    async def board_b_answers():  # if the old pull reads the board, it gets B's files
+        req = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.read_all", timeout=10)
+        await ws.send({"type": "hw.response", "id": req["id"], "ok": True, "result": {"files": {"code.py": base64.b64encode(b"B board").decode()}}})
+
+    answering = asyncio.create_task(board_b_answers())
+    with pytest.raises(mcp_tools.HardwareError, match="project_changed"):
+        await pull
+    answering.cancel()
+    assert {p.name: p.read_bytes() for p in a_src.iterdir()} == before  # A's mirror untouched
+    assert app.get_baseline() is None  # nothing recorded for B

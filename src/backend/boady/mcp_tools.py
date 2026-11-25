@@ -74,6 +74,9 @@ class ToolContext:
     # (manifest, texts): texts = the UTF-8 text of small text files at that moment (review 11)
     set_baseline: Callable[[dict[str, str], dict[str, str]], None] = lambda m, t: None
     get_baseline_texts: Callable[[], dict[str, str]] = lambda: {}
+    # identity of (open project, connected board): an operation started for one never
+    # continues for another (review 14)
+    binding: Callable[[], Any] = lambda: None
 
 
 def _ok(data: Any) -> dict[str, Any]:
@@ -148,12 +151,16 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] 
     def in_scope(m: dict[str, str]) -> dict[str, str]:
         return m if scope is None else {k: v for k, v in m.items() if k in scope}
 
+    still = _bound(ctx)
     before = in_scope(sync.manifest(src))
     dirty = [f for f in await _dirty_src(root) if scope is None or f[len("src/"):] in scope]
+    still()
     if dirty and ask and not await ctx.confirm("pull_overwrites", {"files": dirty}):
         return {"declined": True}
+    still()
     res = await ctx.bridge.request("fs.read_all", {}, timeout=300)
     while True:
+        still()  # also right before the write below: no wait in between
         now = in_scope(sync.manifest(src))
         changed = sorted("src/" + p for p in set(before) | set(now) if before.get(p) != now.get(p))
         if not changed:
@@ -207,6 +214,18 @@ def _src(root: Path) -> Path:
         raise HardwareError(str(e)) from e
 
 
+def _bound(ctx: ToolContext) -> Callable[[], None]:
+    """A check for after every wait: the project and the board are still the ones the
+    operation started with, or it stops before writing anything more."""
+    start = ctx.binding()
+
+    def check() -> None:
+        if ctx.binding() != start:
+            raise HardwareError("project_changed: another project or board was selected while this ran; it stopped without writing anything more.")
+
+    return check
+
+
 def _check_board(ctx: ToolContext) -> None:
     err = ctx.board_error()
     if err:
@@ -223,9 +242,11 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     src = _src(root)
     # One snapshot for the plan, the transferred bytes and the baseline: edits
     # made while the upload runs are not part of it (they go with the next one).
+    still = _bound(ctx)
     snap = sync.snapshot(src)
     snap_manifest = {rel: sync.sha256(data) for rel, data in snap.items()}
     plan = await ctx.bridge.request("fs.plan", {"manifest": snap_manifest}, timeout=300) or {}
+    still()
     need = [p for p in plan.get("need", []) if p in snap]
     delete = [p for p in plan.get("delete", []) if not sync.excluded(p)]
     files = {rel: base64.b64encode(snap[rel]).decode() for rel in need}
@@ -233,6 +254,7 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     # what the board prints after it (the reload the frontend triggers), never older output.
     since = ctx.bridge.buffers["repl"].end
     res = await ctx.bridge.request("fs.apply", {"files": files, "delete": delete}, timeout=600) or {}
+    still()  # the baseline belongs to the board the files went to
     out = {"written": res.get("written", need), "deleted": res.get("deleted", delete), "since": since}
     for k in ("channel", "restarted", "note"):
         if k in res:
@@ -270,7 +292,9 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
     # that needs a diff differs from what is sent here: the baseline when there is one
     # (diffs of changed_on_board), else the mirror (diffs of board_only / differs).
     known = baseline if baseline is not None else mirror
+    still = _bound(ctx)
     res = await ctx.bridge.request("fs.read_all", {"known": known}, timeout=300) or {}
+    still()
     board_files = {k.strip("/"): v for k, v in res.get("files", {}).items() if k.strip("/") and not sync.excluded(k)}
     board = sync.manifest_of(board_files)
     for p in res.get("same") or []:
