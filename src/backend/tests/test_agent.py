@@ -139,3 +139,29 @@ async def test_claude_md_through_a_link_is_not_loaded(project, tmp_path):
     (project.path / "CLAUDE.md").unlink()
     (project.path / "CLAUDE.md").symlink_to(secret)
     assert "SECRET" not in session(project).build_options().system_prompt["append"]
+
+
+async def test_connect_restarts_only_for_a_changed_prompt_and_never_mid_turn(project, fake_client):
+    """Review 10, coverage 2: a mistake here would restart Claude Code on every message."""
+
+    async def emit(ev):
+        pass
+
+    async def ask(name, tinput, tid):
+        return False, "no"
+
+    s = AgentSession(project, emit, ask, None, [], env={}, client_factory=fake_client)
+    await s.connect()
+    await s.connect()
+    await s.send("hi")  # send() connects too
+    assert len(fake_client.instances) == 1 and fake_client.instances[0].queries == ["hi"]
+    # the prompt changes while a turn runs: kept until the turn is over
+    (project.path / "CLAUDE.md").write_text("new rules\n")
+    assert s.running
+    await s.connect()
+    assert len(fake_client.instances) == 1
+    s.running = False
+    await s.connect()
+    assert len(fake_client.instances) == 2 and not fake_client.instances[0].connected
+    assert "new rules" in fake_client.instances[1].options.system_prompt["append"]
+    await s.close()
