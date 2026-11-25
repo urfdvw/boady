@@ -342,3 +342,25 @@ async def test_upload_uses_one_snapshot_for_plan_transfer_and_baseline(env, boar
     await ws.send({"type": "hw.response", "id": apply["id"], "ok": True, "result": {"written": ["code.py"], "deleted": []}})
     await task
     assert app.get_baseline()["code.py"] == mcp_tools.sync.sha256(b"A")
+
+
+async def test_pull_selected_paths_keeps_local_edits(env, board):
+    """Review 3, finding 4: keeping the board's data.txt must not overwrite the local code.py fix."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "sel", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"old\n", "data.txt": b"1\n"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    await ws.action("git.commit", {"message": "board"}, "c")
+    src = app.project.path / "src"
+    (src / "code.py").write_text("fixed\n")  # uncommitted local fix
+    task = asyncio.create_task(mcp_tools.pull_from_device(app.tool_ctx, paths=["data.txt"]))
+    await answer_pull(ws, {"code.py": b"old\n", "data.txt": b"2\n"})
+    res = await task  # no approval: data.txt has no local edits
+    assert res == {"added": [], "modified": ["data.txt"], "deleted": []}
+    assert (src / "data.txt").read_text() == "2\n"
+    assert (src / "code.py").read_text() == "fixed\n"
+    assert not any(m["type"] == "permission_request" for m in ws.inbox)

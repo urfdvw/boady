@@ -92,3 +92,21 @@ def test_text_diffs_never_read_through_directory_links(tmp_path):
     assert "+print(1)" in d["code.py"]
     assert sync.safe_mirror_file(src, "lib/config.txt") is None
     assert sync.safe_mirror_file(src, "code.py") == src / "code.py"
+
+
+def test_apply_paths_only_touches_given_files_and_refuses_links(tmp_path):
+    import pytest
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "code.py").write_text("local")
+    (src / "old.txt").write_text("x")
+    res = sync.apply_paths(src, {"data.txt": b64(b"d"), "code.py": b64(b"board")}, ["data.txt", "old.txt"])
+    assert res == {"added": ["data.txt"], "modified": [], "deleted": ["old.txt"]}
+    assert (src / "code.py").read_text() == "local"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (src / "lib").symlink_to(outside)
+    with pytest.raises(ValueError):
+        sync.apply_paths(src, {"lib/x.py": b64(b"x")}, ["lib/x.py"])
+    assert not (outside / "x.py").exists()

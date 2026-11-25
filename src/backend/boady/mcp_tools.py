@@ -84,8 +84,12 @@ async def _dirty_src(root: Path) -> list[str]:
     return [f["path"] for f in await gitops.status(root) if f["path"].startswith("src/")]
 
 
-async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]:
+async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] | None = None) -> dict[str, Any]:
     """Shared by the tool and the user's pull button. Raises HardwareError.
+
+    ``paths`` (src-relative): only make these mirror files equal to the board's
+    (written, or deleted if the board has no such file); all others stay as they
+    are. Used to keep selected board changes without overwriting local edits.
 
     Uncommitted changes in src/ are only overwritten with the user's consent.
     The transfer can take minutes, so the mirror is fingerprinted before it and
@@ -102,13 +106,20 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]
     src = _src(root)
     # fingerprint first: everything changed after this moment is asked about again,
     # including edits made while the first approval card is waiting
-    before = sync.manifest(src)
-    dirty = await _dirty_src(root)
+    scope = None if paths is None else {p.strip("/") for p in paths if p.strip("/")}
+    if scope is not None and any(sync.excluded(p) for p in scope):
+        raise HardwareError("These files are never synced: " + ", ".join(sorted(p for p in scope if sync.excluded(p))))
+
+    def in_scope(m: dict[str, str]) -> dict[str, str]:
+        return m if scope is None else {k: v for k, v in m.items() if k in scope}
+
+    before = in_scope(sync.manifest(src))
+    dirty = [f for f in await _dirty_src(root) if scope is None or f[len("src/"):] in scope]
     if dirty and ask and not await ctx.confirm("pull_overwrites", {"files": dirty}):
         return {"declined": True}
     res = await ctx.bridge.request("fs.read_all", {}, timeout=300)
     while True:
-        now = sync.manifest(src)
+        now = in_scope(sync.manifest(src))
         changed = sorted("src/" + p for p in set(before) | set(now) if before.get(p) != now.get(p))
         if not changed:
             break
@@ -116,7 +127,11 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True) -> dict[str, Any]
             return {"declined": True}
         before = now  # re-check: more edits may have arrived while asking
     board_files = (res or {}).get("files", {})
-    changes = sync.apply_from_device(src, board_files)
+    try:
+        changes = sync.apply_from_device(src, board_files) if scope is None else sync.apply_paths(src, board_files, sorted(scope))
+    except ValueError as e:
+        raise HardwareError(str(e)) from e
+    # the whole board was read, so the baseline is the whole board either way
     ctx.set_baseline(sync.manifest_of(board_files))
     if ctx.on_synced:
         await ctx.on_synced("pull", changes)
@@ -243,10 +258,17 @@ def build_server(ctx: ToolContext, only: set[str] | None = None, check_board: bo
     async def write_data(args):
         return await _write("data", args)
 
-    @tool("sync_from_device", "Pull all board files into the mirror src/ (left uncommitted in git).", {"type": "object", "properties": {}})
+    @tool(
+        "sync_from_device",
+        "Pull board files into the mirror src/ (left uncommitted in git). Without `paths` the whole mirror becomes "
+        "equal to the board; with `paths` (src-relative, e.g. ['data.txt']) only those files are taken from the board "
+        "and all other mirror files are left as they are.",
+        {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}}}},
+    )
     async def sync_from_device(args):
+        paths = args.get("paths")
         try:
-            res = await pull_from_device(ctx)
+            res = await pull_from_device(ctx, paths=list(paths) if isinstance(paths, list) else None)
         except HardwareError as e:
             return _err(str(e))
         if res.get("declined"):

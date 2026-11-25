@@ -123,6 +123,39 @@ def apply_from_device(src: Path, board_files: dict[str, str]) -> dict[str, list[
     return {"added": added, "modified": modified, "deleted": deleted}
 
 
+def _through_link(src: Path, rel: str) -> bool:
+    p = src
+    for part in [x for x in rel.strip("/").split("/") if x]:
+        p = p / part
+        if p.is_symlink():
+            return True
+    return False
+
+
+def apply_paths(src: Path, board_files: dict[str, str], paths: list[str]) -> dict[str, list[str]]:
+    """Make only ``paths`` in the mirror equal to the board; nothing else changes."""
+    board = {k.strip("/"): v for k, v in board_files.items()}
+    added, modified, deleted = [], [], []
+    for rel in paths:
+        target = _safe_target(src, rel)
+        if _through_link(src, rel):
+            raise ValueError(f"refusing a path through a symlink: {rel}")
+        if rel in board:
+            data = base64.b64decode(board[rel])
+            if target.is_file():
+                if target.read_bytes() == data:
+                    continue
+                modified.append(rel)
+            else:
+                added.append(rel)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        elif target.is_file():
+            target.unlink()
+            deleted.append(rel)
+    return {"added": added, "modified": modified, "deleted": deleted}
+
+
 def _prune_empty_dirs(root: Path) -> None:
     for dirpath, _dirs, _files in os.walk(root, topdown=False, followlinks=False):
         d = Path(dirpath)
