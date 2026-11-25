@@ -6,6 +6,7 @@ these tools do not distinguish them. JSON shapes: Specs/additional_specs.md (D7)
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from dataclasses import dataclass
@@ -144,17 +145,20 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
         raise HardwareError("Device not connected.")
     _check_board(ctx)
     src = _src(root)
-    plan = await ctx.bridge.request("fs.plan", {"manifest": sync.manifest(src)}, timeout=300) or {}
-    need = list(plan.get("need", []))
+    # One snapshot for the plan, the transferred bytes and the baseline: edits
+    # made while the upload runs are not part of it (they go with the next one).
+    snap = sync.snapshot(src)
+    snap_manifest = {rel: sync.sha256(data) for rel, data in snap.items()}
+    plan = await ctx.bridge.request("fs.plan", {"manifest": snap_manifest}, timeout=300) or {}
+    need = [p for p in plan.get("need", []) if p in snap]
     delete = [p for p in plan.get("delete", []) if not sync.excluded(p)]
-    res = await ctx.bridge.request(
-        "fs.apply", {"files": sync.encode_files(src, need), "delete": delete}, timeout=600
-    ) or {}
+    files = {rel: base64.b64encode(snap[rel]).decode() for rel in need}
+    res = await ctx.bridge.request("fs.apply", {"files": files, "delete": delete}, timeout=600) or {}
     out = {"written": res.get("written", need), "deleted": res.get("deleted", delete)}
     for k in ("channel", "restarted", "note"):
         if k in res:
             out[k] = res[k]
-    ctx.set_baseline(sync.manifest(src))  # the board now equals the mirror
+    ctx.set_baseline(snap_manifest)  # the board now equals the snapshot that was sent
     if ctx.on_synced:
         await ctx.on_synced("push", out)
     return out

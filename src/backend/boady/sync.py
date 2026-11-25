@@ -78,6 +78,11 @@ def mirror_files(src: Path) -> dict[str, Path]:
     return dict(sorted(out.items()))
 
 
+def snapshot(src: Path) -> dict[str, bytes]:
+    """Contents of all mirror files at one moment (for an upload)."""
+    return {rel: p.read_bytes() for rel, p in mirror_files(src).items()}
+
+
 def manifest(src: Path) -> dict[str, str]:
     return {rel: sha256(p.read_bytes()) for rel, p in mirror_files(src).items()}
 
@@ -127,15 +132,6 @@ def _prune_empty_dirs(root: Path) -> None:
             d.rmdir()
         except OSError:
             pass
-
-
-def encode_files(src: Path, paths: list[str]) -> dict[str, str]:
-    files = mirror_files(src)
-    out: dict[str, Any] = {}
-    for rel in paths:
-        if rel in files:
-            out[rel] = base64.b64encode(files[rel].read_bytes()).decode()
-    return out
 
 
 def safe_mirror_file(src: Path, rel: str) -> Path | None:

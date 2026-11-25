@@ -318,3 +318,27 @@ async def test_compare_without_baseline_says_so(env, board):
     await answer_pull(ws, {"code.py": b"y"})
     r = await task
     assert r["changed_on_board"] is None and "baseline" in r["note"] and r["differs"] == ["code.py"]
+
+
+
+async def test_upload_uses_one_snapshot_for_plan_transfer_and_baseline(env, board):
+    """Review 3, finding 2: an edit made during the upload is neither sent nor recorded."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "snap", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"A0"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    src = app.project.path / "src"
+    (src / "code.py").write_text("A")
+    task = asyncio.create_task(mcp_tools.push_to_device(app.tool_ctx))
+    plan = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.plan", timeout=10)
+    (src / "code.py").write_text("B")  # edited while the upload runs
+    await ws.send({"type": "hw.response", "id": plan["id"], "ok": True, "result": {"need": ["code.py"], "delete": []}})
+    apply = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.apply", timeout=10)
+    assert base64.b64decode(apply["params"]["files"]["code.py"]) == b"A"
+    await ws.send({"type": "hw.response", "id": apply["id"], "ok": True, "result": {"written": ["code.py"], "deleted": []}})
+    await task
+    assert app.get_baseline()["code.py"] == mcp_tools.sync.sha256(b"A")
