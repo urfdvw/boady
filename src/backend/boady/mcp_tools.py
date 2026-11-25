@@ -39,15 +39,16 @@ def decode_ctrl(data: str) -> str:
     return _CTRL.sub(lambda m: chr(int(m.group(1))), data)
 
 
-_WAIT_ESC = re.compile(r"\\(x0[1-4]|r|n)")
-_WAIT_CHARS = {"r": "\r", "n": "\n"}
+_WAIT_TAIL = re.compile(r"(?:\\r|\\n)+$")
 
 
 def decode_wait_for(text: str) -> str:
-    r"""``wait_for`` written the way the prompt teaches writing: ``\x01``..``\x04``,
-    ``\r`` and ``\n`` as escape text become the real characters (board output
-    practically never contains a literal backslash before them)."""
-    return _WAIT_ESC.sub(lambda m: _WAIT_CHARS.get(m.group(1)) or chr(int(m.group(1)[1:], 16)), text)
+    r"""``wait_for`` written the way the prompt teaches writing: ``\x01``..``\x04``
+    anywhere, and a run of ``\r`` / ``\n`` escapes at the very end (a line end), become
+    the real characters. Elsewhere ``\n`` stays literal: ``repr()`` output such as
+    ``'done\n'`` contains it (review 10)."""
+    text = _WAIT_TAIL.sub(lambda m: m.group(0).replace("\\r", "\r").replace("\\n", "\n"), text)
+    return _CTRL.sub(lambda m: chr(int(m.group(1))), text)
 
 
 def _wait_arg(w: Any) -> str | list[str] | None:

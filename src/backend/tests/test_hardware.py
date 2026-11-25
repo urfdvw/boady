@@ -103,6 +103,9 @@ def test_decode_wait_for():
     assert decode_wait_for(r"Code done running.\r\n") == "Code done running.\r\n"
     assert decode_wait_for(">>> ") == ">>> "
     assert decode_wait_for(r"\x05") == r"\x05"
+    # review 10: repr() output keeps its backslashes; only a line end at the very end is decoded
+    assert decode_wait_for(r"'done\n'") == r"'done\n'"
+    assert decode_wait_for(r"b'\r\n' >>> ") == r"b'\r\n' >>> "
 
 
 async def _ctx():
