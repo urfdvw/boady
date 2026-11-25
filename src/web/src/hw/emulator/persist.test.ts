@@ -47,4 +47,29 @@ describe("emulator persistence while running", () => {
     again.stop();
     expect(text).toContain("written in the REPL\r\n");
   }, 60000);
+
+  it("saves during continuous writes, not only after they stop (review 5, finding 4)", async () => {
+    const pico = new PicoMachine({ firmware: fw(), uid });
+    let out = "";
+    const host = new InProcessHost(pico);
+    const savedWhileLooping: boolean[] = [];
+    const link = new EmulatorLink(host, { runtime: "micropython", firmware: "x", project: "p" }, async () => {
+      savedWhileLooping.push(!out.includes("LOOPDONE"));
+    });
+    link.onData = (b) => (out += fromUtf8(b));
+    pico.start();
+    await host.ready();
+    await repl(pico, () => out, "", ">>> ");
+    // a program logging without pause: never a quiet second
+    await repl(
+      pico,
+      () => out,
+      "exec(\"import time\\nfor i in range(400):\\n f=open('log.txt','w');f.write(str(i));f.close()\\n time.sleep(0.02)\\nprint('LOOP'+'DONE')\")",
+      "LOOPDONE",
+    );
+    pico.stop();
+    expect(out).toContain("LOOPDONE");
+    expect(savedWhileLooping.filter(Boolean).length, "no save while the program kept writing").toBeGreaterThan(0);
+  }, 180000);
 });
+

@@ -47,17 +47,27 @@ export class PicoMachine {
   connected = false;
   onData: (b: Uint8Array) => void = () => {};
   onConnected: () => void = () => {};
-  /** The firmware wrote flash and has been quiet for ``quietMs``: time to save the image. */
+  /**
+   * Time to save the image: the firmware wrote flash and was then quiet for
+   * ``quietMs``, or it kept writing for ``maxMs`` since the first unsaved write
+   * (a program logging continuously must not postpone saving forever).
+   */
   onFlashChanged: () => void = () => {};
   quietMs = 1000;
+  maxMs = 5000;
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
+  private firstUnsaved: number | null = null;
 
   private flashWritten() {
+    const now = Date.now();
+    if (this.firstUnsaved === null) this.firstUnsaved = now;
     if (this.flashTimer) clearTimeout(this.flashTimer);
+    const wait = Math.max(0, Math.min(this.quietMs, this.firstUnsaved + this.maxMs - now));
     this.flashTimer = setTimeout(() => {
       this.flashTimer = null;
+      this.firstUnsaved = null;
       this.onFlashChanged();
-    }, this.quietMs);
+    }, wait);
   }
 
   constructor(opts: PicoOptions) {
@@ -125,6 +135,7 @@ export class PicoMachine {
   stop(): void {
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.flashTimer = null;
+    this.firstUnsaved = null;
     if (this.pump) clearInterval(this.pump);
     this.pump = null;
     this.sim.stop();
