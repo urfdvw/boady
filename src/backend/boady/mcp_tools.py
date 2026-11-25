@@ -71,7 +71,9 @@ class ToolContext:
     board_error: Callable[[], str | None] = lambda: None
     # the board's file hashes right after the last pull / upload (baseline), or None
     get_baseline: Callable[[], dict[str, str] | None] = lambda: None
-    set_baseline: Callable[[dict[str, str]], None] = lambda m: None
+    # (manifest, texts): texts = the UTF-8 text of small text files at that moment (review 11)
+    set_baseline: Callable[[dict[str, str], dict[str, str]], None] = lambda m, t: None
+    get_baseline_texts: Callable[[], dict[str, str]] = lambda: {}
 
 
 def _ok(data: Any) -> dict[str, Any]:
@@ -165,20 +167,25 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] 
     except ValueError as e:
         raise HardwareError(str(e)) from e
     board_manifest = sync.manifest_of(board_files)
+    board_texts = sync.texts_of({k.strip("/"): base64.b64decode(v) for k, v in board_files.items() if k.strip("/") in board_manifest})
     if scope is None:
-        ctx.set_baseline(board_manifest)
+        ctx.set_baseline(board_manifest, board_texts)
     else:
         # Reading a file is not handling its change: only the taken files move
         # to the board's state; every other board change stays visible to the
         # next compare_with_device. Without a baseline, only the taken files
         # are known, so all others will be reported (safe side).
         base = dict(ctx.get_baseline() or {})
+        texts = dict(ctx.get_baseline_texts())
         for rel in scope:
+            texts.pop(rel, None)
             if rel in board_manifest:
                 base[rel] = board_manifest[rel]
+                if rel in board_texts:
+                    texts[rel] = board_texts[rel]
             else:
                 base.pop(rel, None)
-        ctx.set_baseline(base)
+        ctx.set_baseline(base, texts)
     changes = {**changes, **_read_channel(res)}
     if ctx.on_synced:
         await ctx.on_synced("pull", changes)
@@ -230,7 +237,7 @@ async def push_to_device(ctx: ToolContext) -> dict[str, Any]:
     for k in ("channel", "restarted", "note"):
         if k in res:
             out[k] = res[k]
-    ctx.set_baseline(snap_manifest)  # the board now equals the snapshot that was sent
+    ctx.set_baseline(snap_manifest, sync.texts_of(snap))  # the board now equals the snapshot that was sent
     if ctx.on_synced:
         await ctx.on_synced("push", out)
     return out
@@ -281,6 +288,12 @@ async def compare_with_device(ctx: ToolContext) -> dict[str, Any]:
         out["edited_in_mirror"] = sorted(p for p in out["changed_on_board"] if mirror.get(p) != baseline.get(p))
     interesting = out["changed_on_board"] if baseline is not None else out["board_only"] + out["differs"]
     out["diffs"] = sync.text_diffs(local, board_files, interesting)
+    if baseline is not None:
+        # who changed what (review 11): baseline -> board and baseline -> mirror, separately
+        texts = ctx.get_baseline_texts()
+        board_now = {rel: base64.b64decode(b) for rel, b in board_files.items()}
+        out["board_changes"] = sync.change_diffs(texts, baseline, board_now, out["changed_on_board"], "baseline", "board")
+        out["your_changes"] = sync.change_diffs(texts, baseline, local, out["edited_in_mirror"], "baseline", "mirror")
     out.update(_read_channel(res))
     if baseline is None:
         out["note"] = "No baseline yet (no pull or upload since boady started tracking this board): changed_on_board is unknown."

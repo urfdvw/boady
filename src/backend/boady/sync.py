@@ -303,3 +303,48 @@ def text_diffs(mirror: dict[str, bytes], board_b64: dict[str, str], paths: list[
         out[rel] = d[:budget]
         budget -= len(out[rel])
     return out
+
+
+# ---- text of the baseline (review 11): what the board and the mirror each changed ----
+
+BASELINE_TEXT_LIMIT = 64 * 1024
+
+
+def texts_of(files: dict[str, bytes]) -> dict[str, str]:
+    """UTF-8 text files up to BASELINE_TEXT_LIMIT bytes (binaries and big files are left out)."""
+    out: dict[str, str] = {}
+    for rel, data in files.items():
+        if len(data) <= BASELINE_TEXT_LIMIT:
+            try:
+                out[rel] = data.decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+    return out
+
+
+def change_diffs(
+    old: dict[str, str], old_manifest: dict[str, str], new: dict[str, bytes], paths: list[str],
+    old_label: str, new_label: str, max_chars: int = 4000,
+) -> dict[str, str]:
+    """Diffs old -> new of ``paths``: ``old`` is the baseline's text (a path missing from
+    ``old_manifest`` did not exist then); ``new`` the current bytes (missing = deleted).
+    ``(no stored text)`` when the baseline kept no text of it, ``(binary)`` for binaries."""
+    import difflib
+
+    out: dict[str, str] = {}
+    budget = max_chars
+    for rel in paths:
+        if budget <= 0:
+            break
+        if rel in old_manifest and rel not in old:
+            out[rel] = "(no stored text)"
+            continue
+        try:
+            after = new[rel].decode("utf-8") if rel in new else ""
+        except UnicodeDecodeError:
+            out[rel] = "(binary)"
+            continue
+        d = "".join(difflib.unified_diff(old.get(rel, "").splitlines(True), after.splitlines(True), f"{old_label}/{rel}", f"{new_label}/{rel}"))
+        out[rel] = d[:budget]
+        budget -= len(out[rel])
+    return out

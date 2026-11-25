@@ -76,6 +76,7 @@ class App:
         self.tool_ctx.board_error = self.board_error
         self.tool_ctx.get_baseline = self.get_baseline
         self.tool_ctx.set_baseline = self.set_baseline
+        self.tool_ctx.get_baseline_texts = self.get_baseline_texts
         self.tool_ctx.project_info = lambda: (self.project.type, self.project.mpy_version) if self.project else None
         self._tasks: set[asyncio.Task] = set()
         self._identify_task: asyncio.Task | None = None
@@ -485,10 +486,17 @@ class App:
             return None
         return dict(data.get("manifest") or {})
 
-    def set_baseline(self, manifest: dict[str, str]) -> None:
+    def get_baseline_texts(self) -> dict[str, str]:
+        f, uid = self._baseline_file(), self.bridge.device.uid
+        data = read_json(f, None) if f else None
+        if not data or not uid or data.get("uid") != uid:
+            return {}
+        return {k: v for k, v in (data.get("texts") or {}).items() if isinstance(v, str)}
+
+    def set_baseline(self, manifest: dict[str, str], texts: dict[str, str] | None = None) -> None:
         f, uid = self._baseline_file(), self.bridge.device.uid
         if f and uid:
-            write_json(f, {"uid": uid, "manifest": manifest}, mode=0o600)
+            write_json(f, {"uid": uid, "manifest": manifest, "texts": texts or {}}, mode=0o600)
 
     def device_kind(self) -> str:
         """Board kind of the connected device: the emulator or a real USB board."""

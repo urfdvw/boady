@@ -582,3 +582,36 @@ async def test_opening_other_runtime_project_with_leftover_emulator(env, board):
     await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("emulator_other_project"), timeout=10)
     assert app.project is not None and app.project.id == b
     assert not any(m["type"] == "project.select_required" for m in ws.inbox)
+
+
+async def test_compare_separates_board_changes_from_mirror_changes(env, board):
+    """Review 11, finding 1: a mixed mirror->board diff cannot say who changed what, and
+    git diff is empty once the user committed the agent's edit. The baseline keeps the
+    text, so compare reports baseline->board and baseline->mirror separately."""
+    from boady import mcp_tools
+
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "who", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x = 1\ny = 0\n", "blob.bin": b"\xff\x00"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    src = app.project.path / "src"
+    (src / "code.py").write_text("x = 1\ny = 2\n")  # the agent's edit
+    await ws.action("git.commit", {"message": "agent edit committed by the user"}, "g")
+    task = asyncio.create_task(mcp_tools.compare_with_device(app.tool_ctx))
+    await answer_pull(ws, {"code.py": b"x = 9\ny = 0\n", "blob.bin": b"\xff\x01"})  # the board's change
+    r = await task
+    assert r["changed_on_board"] == ["blob.bin", "code.py"] and r["edited_in_mirror"] == ["code.py"]
+    board_d, mine = r["board_changes"]["code.py"], r["your_changes"]["code.py"]
+    assert "-x = 1\n" in board_d and "+x = 9\n" in board_d and "y = 2" not in board_d and "-y" not in board_d
+    assert "-y = 0\n" in mine and "+y = 2\n" in mine and "x = 9" not in mine
+    assert r["board_changes"]["blob.bin"] == "(no stored text)"
+    # after an upload the baseline text is the mirror's
+    task = asyncio.create_task(mcp_tools.push_to_device(app.tool_ctx))
+    plan = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.plan", timeout=10)
+    await ws.send({"type": "hw.response", "id": plan["id"], "ok": True, "result": {"need": ["code.py"], "delete": []}})
+    apply = await ws.wait(lambda m: m["type"] == "hw.request" and m["op"] == "fs.apply", timeout=10)
+    await ws.send({"type": "hw.response", "id": apply["id"], "ok": True, "result": {"written": ["code.py"], "deleted": []}})
+    await task
+    assert app.get_baseline_texts()["code.py"] == "x = 1\ny = 2\n"
