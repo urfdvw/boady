@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PARTS,
   HEADER_GPIOS,
+  HeldButtons,
   LEFT_PINS,
   MAX_SCALE,
   RIGHT_PINS,
@@ -57,5 +58,18 @@ describe("emulator tab parts (D42)", () => {
     expect(v.scale).toBe(2);
     expect((110 - v.x) / v.scale).toBe(100);
     expect((60 - v.y) / v.scale).toBe(50);
+  });
+
+  it("releases every held push button (review 8: tab unmounted or window blurred while held)", () => {
+    const calls: [number, boolean | null][] = [];
+    const b = new HeldButtons((g, v) => calls.push([g, v]));
+    b.press(14, false);
+    b.press(3, true);
+    expect(b.has(14)).toBe(true);
+    expect(b.release(14)).toBe(true);
+    expect(b.release(14)).toBe(false); // pointerup and lostpointercapture both arrive: released once
+    expect(b.releaseAll()).toBe(true);
+    expect(b.releaseAll()).toBe(false);
+    expect(calls).toEqual([[14, false], [3, true], [14, null], [3, null]]);
   });
 });

@@ -10,6 +10,7 @@ import type { EmulatorPins } from "../hw/emulator/link";
 import type { PinState } from "../hw/emulator/pico";
 import {
   DEFAULT_PARTS,
+  HeldButtons,
   LEFT_PINS,
   ONBOARD_LED,
   RIGHT_PINS,
@@ -53,9 +54,24 @@ export function EmulatorTab({ backend, hw }: { backend: Backend; hw: DeviceManag
   const state = useSyncExternalStore(subscribe, () => pins?.pins ?? NO_PINS);
   const projectId = backend.state?.project?.id;
   const [saved, setSaved] = useState<SavedParts>(() => loadParts(projectId));
-  // momentary buttons held right now (a ref: pointerup can come before the next render)
-  const held = useRef(new Set<number>());
   const [, rerender] = useState(0);
+  // push buttons held right now (not state: pointerup can come before the next render)
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
+  const held = useRef<HeldButtons | null>(null);
+  if (!held.current) held.current = new HeldButtons((g, v) => pinsRef.current?.setPin(g, v));
+  // a held button is let go when the tab goes away or the window loses focus (review 8)
+  useEffect(() => {
+    const letGo = () => held.current!.releaseAll() && rerender((n) => n + 1);
+    const onVisibility = () => document.visibilityState === "hidden" && letGo();
+    window.addEventListener("blur", letGo);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", letGo);
+      document.removeEventListener("visibilitychange", onVisibility);
+      held.current!.releaseAll();
+    };
+  }, []);
   const [selected, setSelected] = useState<number | null>(null);
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 });
   const viewport = useRef<HTMLDivElement>(null);
@@ -69,7 +85,7 @@ export function EmulatorTab({ backend, hw }: { backend: Backend; hw: DeviceManag
 
   // switches saved as on are applied by the emulator itself when it starts (browser.ts)
 
-  const active = (g: number) => held.current.has(g) || saved.on.includes(g);
+  const active = (g: number) => held.current!.has(g) || saved.on.includes(g);
 
   const press = (g: number) => {
     const p = partsOf(saved.parts, g);
@@ -78,16 +94,13 @@ export function EmulatorTab({ backend, hw }: { backend: Backend; hw: DeviceManag
       update({ ...saved, on: on ? [...saved.on, g] : saved.on.filter((x) => x !== g) });
       pins?.setPin(g, driveOf(p, on));
     } else {
-      held.current.add(g);
+      held.current!.press(g, driveOf(p, true) as boolean);
       rerender((n) => n + 1);
-      pins?.setPin(g, driveOf(p, true));
     }
   };
 
   const release = (g: number) => {
-    if (!held.current.delete(g)) return;
-    rerender((n) => n + 1);
-    pins?.setPin(g, null);
+    if (held.current!.release(g)) rerender((n) => n + 1);
   };
 
   const setParts = (g: number, patch: Partial<PinParts>) => {

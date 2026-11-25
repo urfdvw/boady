@@ -165,3 +165,31 @@ export function zoomAt(v: View, factor: number, at: Point): View {
   const cy = (at.y - v.y) / v.scale;
   return { scale, x: at.x - cx * scale, y: at.y - cy * scale };
 }
+
+/**
+ * Push buttons held right now. Every press is matched by a release, also when the
+ * tab goes away or the window loses focus while a button is held (review 8): a
+ * pin must never stay driven by a button nobody holds.
+ */
+export class HeldButtons {
+  private held = new Set<number>();
+  constructor(private setPin: (gpio: number, value: boolean | null) => void) {}
+  has(g: number): boolean {
+    return this.held.has(g);
+  }
+  press(g: number, level: boolean): void {
+    this.held.add(g);
+    this.setPin(g, level);
+  }
+  /** True if it was held. */
+  release(g: number): boolean {
+    if (!this.held.delete(g)) return false;
+    this.setPin(g, null);
+    return true;
+  }
+  releaseAll(): boolean {
+    const any = this.held.size > 0;
+    for (const g of [...this.held]) this.release(g);
+    return any;
+  }
+}
