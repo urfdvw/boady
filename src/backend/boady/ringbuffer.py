@@ -7,6 +7,8 @@ stream since the backend started; old bytes are evicted when the buffer is full.
 from __future__ import annotations
 
 import asyncio
+import codecs
+import itertools
 from dataclasses import dataclass
 
 
@@ -31,14 +33,28 @@ class ReadResult:
 
 
 def _complete_utf8(data: bytes) -> int:
-    """Length of ``data`` without a trailing, still incomplete UTF-8 character."""
-    for back in range(1, min(4, len(data)) + 1):
-        b = data[-back]
-        if b & 0xC0 == 0x80:  # continuation byte: look further back for the lead byte
-            continue
-        need = 2 if b & 0xE0 == 0xC0 else 3 if b & 0xF0 == 0xE0 else 4 if b & 0xF8 == 0xF0 else 1
-        return len(data) - back if back < need else len(data)
-    return len(data)  # no lead byte in reach: not UTF-8 we can complete, return it as is
+    """Length of ``data`` without a trailing UTF-8 character that may still be completed.
+
+    The standard incremental decoder decides: it keeps back only bytes that a following
+    byte could still turn into a valid character; invalid ones (``C0``, ``C1``, ``F5``,
+    ``E0 80`` ...) are decoded at once as replacement characters (review 17)."""
+    dec = codecs.getincrementaldecoder("utf-8")("replace")
+    dec.decode(data, final=False)
+    held = dec.getstate()[0]
+    # the decoder also holds a few prefixes no byte can complete (ED A0 = a surrogate)
+    return len(data) - len(held) if held and _completable(held) else len(data)
+
+
+def _completable(prefix: bytes) -> bool:
+    """Whether some continuation bytes turn ``prefix`` into a valid UTF-8 character."""
+    for extra in range(1, 5 - len(prefix)):
+        for tail in itertools.product((0x80, 0x8F, 0x90, 0x9F, 0xA0, 0xBF), repeat=extra):
+            try:
+                (prefix + bytes(tail)).decode("utf-8")
+                return True
+            except UnicodeDecodeError:
+                pass
+    return False
 
 
 class RingBuffer:

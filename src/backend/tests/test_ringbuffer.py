@@ -90,3 +90,18 @@ async def test_a_character_split_across_packets_is_read_whole():
     assert (await rb.read(since=r3.cursor)).text == ""
     await rb.append(b"\xff")  # not UTF-8 at all: returned (replaced), never held forever
     assert (await rb.read(since=r3.cursor)).text.endswith("�")
+
+
+
+async def test_bytes_that_can_never_be_a_character_are_returned_at_once():
+    """Review 17: invalid UTF-8 lead bytes were held back forever (cursor stuck)."""
+    for bad in (b"\xc0", b"\xc1", b"\xf5", b"\xe0\x80", b"\xed\xa0", b"\xff", b"\x80"):
+        rb = RingBuffer(100)
+        await rb.append(b"ok " + bad)
+        r = await rb.read(since=0)
+        assert r.cursor == rb.end and r.text.startswith("ok ") and "\ufffd" in r.text, (bad, r)
+    for wait in (b"\xe4", b"\xe4\xbd", b"\xf0\x9f\x98", b"\xc3"):  # can still be completed: held
+        rb = RingBuffer(100)
+        await rb.append(b"ok " + wait)
+        r = await rb.read(since=0)
+        assert r.text == "ok " and r.cursor == 3, (wait, r)
