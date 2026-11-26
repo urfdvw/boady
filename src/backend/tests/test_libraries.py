@@ -159,3 +159,22 @@ def test_circup_found_next_to_python_without_path(tmp_path, monkeypatch):
     (bindir / "circup").unlink()
     with pytest.raises(libraries.LibraryError, match="circup_missing"):
         libraries._circup()
+
+
+async def test_library_tool_installs_bundle_names_never_local_files(tmp_path, fake_circup):
+    """Review 18: circup installs a local file given as a module name, and the library
+    tool runs it in the project root, so 'sensor.py' (a link to anything) got copied in."""
+    root = tmp_path / "proj"
+    src = root / "src"
+    src.mkdir(parents=True)
+    (src / "boot_out.txt").write_text("Adafruit CircuitPython 9.2.1\n")
+    outside = tmp_path / "secret.py"
+    outside.write_text("SECRET = 1\n")
+    (root / "sensor.py").symlink_to(outside)
+    (root / "helper").mkdir()
+    for name in ("sensor.py", "anything.mpy", "helper"):
+        with pytest.raises(libraries.LibraryError, match="invalid_name"):
+            await libraries.install("circuitpython", src, [name])
+    assert not fake_circup.exists() or "install" not in fake_circup.read_text()
+    await libraries.install("circuitpython", src, ["adafruit_bme280"])
+    assert "install adafruit_bme280" in fake_circup.read_text()

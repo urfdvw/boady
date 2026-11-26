@@ -9,6 +9,7 @@ top-level entries of ``src/lib``.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sys
@@ -170,7 +171,13 @@ async def install(project_type: str, src: Path, names: list[str], mpy_version: i
                 raise LibraryError(str(e)) from e
             logs.append(res["log"].strip())
         return "\n".join(logs)
-    return await circup(src, "install", *_names(names))
+    names = _names(names)
+    # circup also installs local files given as modules (from its cwd, the project root);
+    # the library tool installs bundle libraries only (review 18)
+    local = [n for n in names if n.endswith((".py", ".mpy")) or os.path.lexists(src.parent / n)]
+    if local:
+        raise LibraryError(f"invalid_name: {local[0]!r} is a file, not a bundle library name")
+    return await circup(src, "install", *names)
 
 
 async def update(project_type: str, src: Path) -> str:
