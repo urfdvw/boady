@@ -30,6 +30,17 @@ class ReadResult:
         }
 
 
+def _complete_utf8(data: bytes) -> int:
+    """Length of ``data`` without a trailing, still incomplete UTF-8 character."""
+    for back in range(1, min(4, len(data)) + 1):
+        b = data[-back]
+        if b & 0xC0 == 0x80:  # continuation byte: look further back for the lead byte
+            continue
+        need = 2 if b & 0xE0 == 0xC0 else 3 if b & 0xF0 == 0xE0 else 4 if b & 0xF8 == 0xF0 else 1
+        return len(data) - back if back < need else len(data)
+    return len(data)  # no lead byte in reach: not UTF-8 we can complete, return it as is
+
+
 class RingBuffer:
     def __init__(self, capacity: int):
         self.capacity = capacity
@@ -97,6 +108,10 @@ class RingBuffer:
                 match = first()
                 matched = match is not None
         data, start, truncated = self._slice(since, tail)
+        if start + len(data) == self.end:
+            # a character whose bytes have not all arrived stays for the next read: the
+            # cursor stops before it (review 16: "你好" read in two parts gave "���好")
+            data = data[: _complete_utf8(data)]
         return ReadResult(data.decode("utf-8", errors="replace"), start + len(data), start, truncated, matched, match)
 
     def clear(self) -> None:

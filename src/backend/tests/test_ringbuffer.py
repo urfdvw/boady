@@ -71,3 +71,22 @@ async def test_wait_for_alternatives_returns_the_first_that_appears():
     assert r.match == ">>> "
     r = await rb.read(since=0, wait_for=["nope"], timeout_ms=10)
     assert r.matched is False and r.match is None
+
+
+async def test_a_character_split_across_packets_is_read_whole():
+    """Review 16, finding 2: reading between the bytes of one character lost it."""
+    rb = RingBuffer(1000)
+    data = "你好".encode()
+    await rb.append(data[:1])
+    r1 = await rb.read(since=0)
+    assert r1.text == "" and r1.cursor == 0  # nothing complete yet; the cursor waits before it
+    await rb.append(data[1:4])
+    r2 = await rb.read(since=r1.cursor)
+    assert r2.text == "你" and r2.cursor == 3
+    await rb.append(data[4:] + b">>> ")
+    r3 = await rb.read(since=r2.cursor)
+    assert r1.text + r2.text + r3.text == "你好>>> "
+    await rb.append("é".encode()[:1])
+    assert (await rb.read(since=r3.cursor)).text == ""
+    await rb.append(b"\xff")  # not UTF-8 at all: returned (replaced), never held forever
+    assert (await rb.read(since=r3.cursor)).text.endswith("�")
