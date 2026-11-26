@@ -34,12 +34,13 @@ function identifyStopKeys(): string[] {
   return keys.map((k) => (k === "`\\r`" ? "\r" : String.fromCharCode(parseInt(k.slice(3, 5), 16))));
 }
 
-/** What the agent's system prompt writes to stop the program and reach >>> (its "Stopping the program" step). */
-function agentStopKeys(runtime: string): string {
+/** The writes of the agent's system prompt step that stops the program and reaches >>>, in order. */
+function agentStopWrites(runtime: string): string[] {
   const md = read(`../prompts/system/${runtime}.md`).toString();
   const step = md.split("\n").find((l) => l.startsWith("- **Stopping the program"))!;
-  const arg = step.match(/write_repl\("([^"]*)"\)/)![1];
-  return arg.replace(/\\x([0-9a-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\r/g, "\r");
+  return [...step.matchAll(/write_repl\("([^"]*)"\)/g)].map((m) =>
+    m[1].replace(/\\x([0-9a-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\r/g, "\r"),
+  );
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -306,24 +307,51 @@ for (const runtime of ["micropython", "circuitpython"] as const) {
       await waitFor(">>> ", at, 30000);
     }, 120000);
 
-    it("the agent's stop step reaches >>> from every state the user can leave (review 12)", async () => {
-      const stop = agentStopKeys(runtime);
-      expect(stop).toBe("\x03\x02");
-      const reach = async (setup: string, setupMarker: string, what: string) => {
+    it("the agent's stop step reaches >>> from every state, a running code.py included (reviews 12, 15)", async () => {
+      const writes = agentStopWrites(runtime);
+      expect(writes).toEqual(["\x03", "\x02"]);
+      // the prompt's procedure: first write, wait (a timeout is fine), second write, wait for >>>
+      const stop = async (what: string) => {
         let at = stream().length;
-        await dm.consoleWrite("repl", setup);
-        await waitFor(setupMarker, at, 30000);
+        await dm.consoleWrite("repl", writes[0]);
+        await readRepl(at, runtime === "circuitpython" ? "Press any key" : ">>> ", 2000);
         at = stream().length;
-        await dm.consoleWrite("repl", stop);
+        await dm.consoleWrite("repl", writes[1]);
         const text = await readRepl(at, ">>> ", 3000);
         expect(text, `${what}: ${JSON.stringify(text)}`).toContain(">>> ");
         await sleep(300);
       };
-      await reach("\x01", "raw REPL; CTRL-B to exit", "raw REPL");
-      await reach("\x05", "paste mode; Ctrl-C to cancel", "paste mode");
-      await reach("while True: pass\r\r", "... ", "running program");
-      await reach("\r", ">>> ", "normal REPL");
-    }, 120000);
+      const enter = async (setup: string, marker: string) => {
+        const at = stream().length;
+        await dm.consoleWrite("repl", setup);
+        await waitFor(marker, at, 30000);
+      };
+      await enter("\x01", "raw REPL; CTRL-B to exit");
+      await stop("raw REPL");
+      await enter("\x05", "paste mode; Ctrl-C to cancel");
+      await stop("paste mode");
+      await enter("while True: pass\r\r", "... ");
+      await stop("a loop typed at the REPL");
+      await enter("\r", ">>> ");
+      await stop("normal REPL");
+      // review 15: the common case, the program file running (as after every sync)
+      const main = runtime === "circuitpython" ? "code.py" : "main.py";
+      const keep = (await dm.handle("fs.read_all", {}, signal())).files[main];
+      const prog = "import time\nprint('PROGRAM RUNNING')\nwhile True:\n    time.sleep(0.05)\n";
+      let at = stream().length;
+      await dm.handle("fs.apply", { files: { [main]: toBase64(utf8(prog)) }, delete: [] }, signal());
+      if (runtime === "micropython") await dm.consoleWrite("repl", "\x04"); // CircuitPython reloads by itself
+      await waitFor("PROGRAM RUNNING", at, 60000);
+      await sleep(300);
+      await stop(`${main} running`);
+      at = stream().length;
+      await dm.handle("fs.apply", { files: keep ? { [main]: keep } : {}, delete: keep ? [] : [main] }, signal());
+      if (runtime === "circuitpython") {
+        await waitFor("Press any key", at, 60000);
+        await dm.consoleWrite("repl", "\r");
+        await waitFor(">>> ", at, 10000);
+      }
+    }, 180000);
 
     it("every Serial tab key does the same on this firmware (D46)", async () => {
       const key = (id: string) => REPL_KEYS.find((k) => k.id === id)!.data;
