@@ -138,6 +138,21 @@ def _expands(command: str) -> bool:
     return bool(_BRACE.search("".join(plain)))
 
 
+def _circup_stubs(argv: list[str]) -> bool:
+    """``--stubs`` / ``-s`` anywhere, also in a cluster (``-Us``); in ``-rs`` the ``s`` is
+    the value of ``-r`` (click), not the flag (review 18: it runs pip on the host)."""
+    for a in argv[1:]:
+        if a == "--stubs" or a.startswith("--stubs="):
+            return True
+        if a.startswith("-") and not a.startswith("--"):
+            for ch in a[1:]:
+                if ch == "s":
+                    return True
+                if ch == "r":  # takes a value: the rest of the cluster is it
+                    break
+    return False
+
+
 def _circup_path_ok(argv: list[str], root: Path) -> bool:
     """Exactly one --path, pointing at the project's src/, and no network target.
 
@@ -206,6 +221,8 @@ def hard_block(tool: str, inp: dict[str, Any], root: Path) -> str | None:
     if prog == "circup":
         if not _circup_path_ok(argv, root):
             return "circup must be called with --path src (the project mirror)."
+        if _circup_stubs(argv):
+            return "circup --stubs installs packages into the host Python with pip; boady only installs into the mirror."
         # same guard as the library tools: circup writes and deletes under src/lib
         from . import libraries, sync
 

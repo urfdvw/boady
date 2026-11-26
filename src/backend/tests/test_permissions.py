@@ -191,3 +191,13 @@ def test_paths_and_shell_expansions_cannot_reach_outside_unasked(tmp_path):
         assert hard_block("Bash", bash(cmd), root), cmd
     for cmd in ("git diff -- 'src/*.py'", "git log -1 --format='%H $x'", "git show HEAD@{1}", "git log --oneline -n 3"):
         assert hard_block("Bash", bash(cmd), root) is None, cmd
+
+
+def test_circup_stubs_would_pip_install_on_the_host(tmp_path):
+    """Review 18, finding 2: install --stubs runs pip in the backend's Python."""
+    (tmp_path / "src").mkdir()
+    for cmd in ("circup --path src install --stubs adafruit_bme280", "circup --path src install -s adafruit_bme280",
+                "circup --path src install -Us adafruit_bme280", "circup --path src install -as", "circup --path src install --stubs=1 x"):
+        assert hard_block("Bash", {"command": cmd}, tmp_path), cmd
+    for cmd in ("circup --path src install -U adafruit_bme280", "circup --path src install -rs", "circup --path src install adafruit_ssd1306"):
+        assert hard_block("Bash", {"command": cmd}, tmp_path) is None, cmd
