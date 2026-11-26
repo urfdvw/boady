@@ -82,6 +82,19 @@ def _in_git_dir(root: Path, p: str | None) -> bool:
     return in_git_dir(root, Path(p))
 
 
+GIT_GLOBAL_OK = "--literal-pathspecs"  # the one git global option the agent may use (D3, review 17)
+
+
+def parse_command(command: str) -> list[str] | None:
+    """The command both permission layers judge: ``parse_bash``, with a leading
+    ``git --literal-pathspecs`` reduced to ``git`` (file names taken literally changes
+    nothing about what the command may do, so every other rule applies unchanged)."""
+    argv = parse_bash(command)
+    if argv and len(argv) > 2 and argv[0] == "git" and argv[1] == GIT_GLOBAL_OK:
+        return ["git", *argv[2:]]
+    return argv
+
+
 def parse_bash(command: str) -> list[str] | None:
     """Split a whitelisted command; None if it uses shell features."""
     if any(m in command for m in SHELL_META):
@@ -137,7 +150,7 @@ def hard_block(tool: str, inp: dict[str, Any], root: Path) -> str | None:
         return "Writing inside .git is not allowed."
     if tool != "Bash":
         return None
-    argv = parse_bash(str(inp.get("command", "")))
+    argv = parse_command(str(inp.get("command", "")))
     if argv is None:
         return "Bash only runs single whitelisted commands (no pipes, redirects, chaining or substitution)."
     prog = argv[0]
@@ -180,7 +193,7 @@ def classify(tool: str, inp: dict[str, Any], root: Path) -> Decision:
     if tool in ("Read", "Glob", "Grep", "Edit", "Write"):
         return "allow" if _inside(root, _path_arg(tool, inp)) else "ask"
     if tool == "Bash":
-        argv = parse_bash(str(inp.get("command", "")))
+        argv = parse_command(str(inp.get("command", "")))
         if not argv:
             return "ask"
         if _args_leave_root(argv, root):

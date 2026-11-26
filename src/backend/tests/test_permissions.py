@@ -144,3 +144,23 @@ def test_git_dir_is_protected_under_another_spelling(tmp_path):
     with pytest.raises(files.PathError):
         files.entry(root, ".GIT")
     assert (root / ".git" / "config").read_text() == "[core]\n"
+
+
+def test_git_literal_pathspecs_is_the_one_global_option(tmp_path):
+    """Master (option B, review 17): the agent may name files literally; nothing else changes."""
+    def bash(cmd):
+        return {"command": cmd}
+
+    lit = "git --literal-pathspecs"
+    # allowed, and judged like the same command without it
+    for cmd in (f"{lit} diff HEAD -- src/:odd.py", f"{lit} status", f"{lit} log -- 'src/[ab].py'"):
+        assert hard_block("Bash", bash(cmd), tmp_path) is None, cmd
+        assert classify("Bash", bash(cmd), tmp_path) == "allow", cmd
+    # history-changing commands still ask
+    for cmd in (f"{lit} commit -m x", f"{lit} reset --hard", f"{lit} checkout -- src/x.py"):
+        assert hard_block("Bash", bash(cmd), tmp_path) is None, cmd
+        assert classify("Bash", bash(cmd), tmp_path) == "ask", cmd
+    # every other global option, or more of them, is still refused
+    for cmd in (f"{lit} -c core.pager=x log", f"{lit} -C / status", f"{lit} --literal-pathspecs status",
+                "git --glob-pathspecs status", f"{lit} config user.name x", f"{lit} diff --output=/tmp/x", lit):
+        assert hard_block("Bash", bash(cmd), tmp_path), cmd
