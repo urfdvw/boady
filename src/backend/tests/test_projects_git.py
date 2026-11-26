@@ -296,3 +296,30 @@ def test_fill_missing_docs_skips_links(tmp_path):
     (root / "src").rename(root / "real_src")
     (root / "src").symlink_to(root / "real_src", target_is_directory=True)
     assert projects.fill_missing_docs(root, "p", "circuitpython") == []  # src/ is a link: left alone
+
+
+async def test_file_names_are_never_pathspecs(tmp_path):
+    """Review 15: ':code.py' restored code.py (losing its edit), ':!x' everything but x,
+    and an untracked '[ab].py' took a.py and b.py out of the index."""
+    repo = tmp_path / "r"
+    repo.mkdir()
+    await gitops.init(repo)
+    for n in ("code.py", ":code.py", "a.py", "b.py", "x", ":!x"):
+        (repo / n).write_text("v1\n")
+    await gitops.commit(repo, "init")
+    for n in ("code.py", ":code.py", "a.py", "b.py", "x", ":!x"):
+        (repo / n).write_text("edited\n")
+    (repo / "[ab].py").write_text("untracked\n")
+
+    await gitops.reset_file(repo, ":code.py")
+    assert (repo / ":code.py").read_text() == "v1\n" and (repo / "code.py").read_text() == "edited\n"
+    await gitops.reset_file(repo, ":!x")
+    assert (repo / ":!x").read_text() == "v1\n"
+    assert all((repo / n).read_text() == "edited\n" for n in ("code.py", "a.py", "b.py", "x"))
+    await gitops.reset_file(repo, "[ab].py")
+    assert not (repo / "[ab].py").exists()
+    st = {f["path"]: f["status"] for f in await gitops.status(repo)}
+    assert st == {"code.py": "modified", "a.py": "modified", "b.py": "modified", "x": "modified"}
+    d = await gitops.diff(repo, "a.py")
+    assert "a.py" in d and "b.py" not in d
+    assert ":code.py" not in await gitops.diff(repo, "code.py")

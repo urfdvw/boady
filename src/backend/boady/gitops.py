@@ -9,29 +9,34 @@ from typing import Any
 from . import files
 from .proc import ProcError, run
 
+
+# Every path boady passes to git is a literal file name, never a pathspec: without this
+# ":code.py" restores code.py and ":!x" everything but x (review 15).
+GIT = ["git", "--literal-pathspecs"]
+
 FALLBACK_IDENTITY = ["-c", "user.name=boady", "-c", "user.email=boady@localhost"]
 
 
 async def _identity_args(repo: Path) -> list[str]:
     """Use the user's git identity; fall back to a local one if none is set."""
-    name = await run(["git", "config", "user.name"], cwd=repo)
-    email = await run(["git", "config", "user.email"], cwd=repo)
+    name = await run([*GIT, "config", "user.name"], cwd=repo)
+    email = await run([*GIT, "config", "user.email"], cwd=repo)
     if name.ok and name.stdout.strip() and email.ok and email.stdout.strip():
         return []
     return FALLBACK_IDENTITY
 
 
 async def git(repo: Path, *args: str, check: bool = True) -> str:
-    res = await run(["git", *args], cwd=repo, check=check)
+    res = await run([*GIT, *args], cwd=repo, check=check)
     return res.stdout
 
 
 async def init(repo: Path) -> None:
-    await run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    await run([*GIT, "init", "-q", "-b", "main"], cwd=repo, check=True)
 
 
 async def has_commits(repo: Path) -> bool:
-    res = await run(["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=repo)
+    res = await run([*GIT, "rev-parse", "--verify", "-q", "HEAD"], cwd=repo)
     return res.ok
 
 
@@ -75,9 +80,9 @@ async def diff(repo: Path, path: str | None = None) -> str:
     head = await has_commits(repo)
     for f in files:
         if f["status"] == "added":
-            tracked = (await run(["git", "ls-files", "--error-unmatch", "--", f["path"]], cwd=repo)).ok
+            tracked = (await run([*GIT, "ls-files", "--error-unmatch", "--", f["path"]], cwd=repo)).ok
             if not tracked or not head:
-                res = await run(["git", "diff", "--no-index", "--", "/dev/null", f["path"]], cwd=repo)
+                res = await run([*GIT, "diff", "--no-index", "--", "/dev/null", f["path"]], cwd=repo)
                 chunks.append(res.stdout)
                 continue
         if head:
@@ -104,18 +109,18 @@ async def commit(repo: Path, message: str) -> str:
         raise ValueError("commit message is empty")
     await git(repo, "add", "-A")
     ident = await _identity_args(repo)
-    await run(["git", *ident, "commit", "-q", "-m", message], cwd=repo, check=True)
+    await run([*GIT, *ident, "commit", "-q", "-m", message], cwd=repo, check=True)
     return (await git(repo, "rev-parse", "HEAD")).strip()
 
 
 async def _reset_one(repo: Path, path: str) -> None:
     tracked_in_head = (await has_commits(repo)) and (
-        await run(["git", "cat-file", "-e", f"HEAD:{path}"], cwd=repo)
+        await run([*GIT, "cat-file", "-e", f"HEAD:{path}"], cwd=repo)
     ).ok
     if tracked_in_head:
         await git(repo, "restore", "--staged", "--worktree", "--source=HEAD", "--", path)
     else:
-        await run(["git", "rm", "-q", "--cached", "--ignore-unmatch", "--", path], cwd=repo)
+        await run([*GIT, "rm", "-q", "--cached", "--ignore-unmatch", "--", path], cwd=repo)
         target = files.entry(repo, path)  # the link itself, never what it points to
         if target.is_symlink() or target.is_file():
             target.unlink()
@@ -135,7 +140,7 @@ async def reset_all(repo: Path) -> None:
     if await has_commits(repo):
         await git(repo, "reset", "-q", "--hard", "HEAD")
     else:
-        await run(["git", "rm", "-rq", "--cached", "--ignore-unmatch", "."], cwd=repo)
+        await run([*GIT, "rm", "-rq", "--cached", "--ignore-unmatch", "."], cwd=repo)
     await git(repo, "clean", "-fdq")
 
 
@@ -147,7 +152,7 @@ async def push(repo: Path) -> str:
     if not await remotes(repo):
         raise ProcError(["git"], _fake("no remote configured; create one with GitHub first"))
     branch = (await git(repo, "rev-parse", "--abbrev-ref", "HEAD")).strip()
-    res = await run(["git", "push", "-u", "origin", branch], cwd=repo, check=True, timeout=600)
+    res = await run([*GIT, "push", "-u", "origin", branch], cwd=repo, check=True, timeout=600)
     return (res.stderr + res.stdout).strip()
 
 
