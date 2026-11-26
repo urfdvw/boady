@@ -111,6 +111,12 @@ async def _dirty_src(root: Path) -> list[str]:
     return [f["path"] for f in await gitops.status(root) if f["path"].startswith("src/")]
 
 
+async def _ignored_src(root: Path) -> list[str]:
+    """src-relative mirror files git ignores but the sync does not: git never shows them
+    as changes and cannot bring them back (review 16)."""
+    return [p[len("src/"):] for p in await gitops.ignored(root) if p.startswith("src/") and not sync.excluded(p[len("src/"):])]
+
+
 async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] | None = None) -> dict[str, Any]:
     """Shared by the tool and the user's pull button. Raises HardwareError.
 
@@ -154,11 +160,19 @@ async def pull_from_device(ctx: ToolContext, ask: bool = True, paths: list[str] 
     still = _bound(ctx)
     before = in_scope(sync.manifest(src))
     dirty = [f for f in await _dirty_src(root) if scope is None or f[len("src/"):] in scope]
+    ignored = [p for p in await _ignored_src(root) if scope is None or p in scope]
     still()
     if dirty and ask and not await ctx.confirm("pull_overwrites", {"files": dirty}):
         return {"declined": True}
     still()
     res = await ctx.bridge.request("fs.read_all", {}, timeout=300)
+    # ignored files are asked about once the board is known, and only those the pull
+    # would overwrite or delete (an identical copy on the board changes nothing)
+    on_board = sync.manifest_of((res or {}).get("files", {}))
+    at_risk = sorted("src/" + p for p in ignored if before.get(p) != on_board.get(p))
+    still()
+    if at_risk and ask and not await ctx.confirm("pull_overwrites", {"files": at_risk}):
+        return {"declined": True}
     while True:
         still()  # also right before the write below: no wait in between
         now = in_scope(sync.manifest(src))

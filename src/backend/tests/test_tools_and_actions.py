@@ -385,3 +385,32 @@ async def test_a_started_pull_never_continues_for_another_project_and_board(env,
     answering.cancel()
     assert {p.name: p.read_bytes() for p in a_src.iterdir()} == before  # A's mirror untouched
     assert app.get_baseline() is None  # nothing recorded for B
+
+
+async def test_pull_asks_before_touching_files_git_ignores(env, board):
+    """Review 16, finding 1: git status never shows an ignored src/readings.log, so the
+    pull deleted it without asking, even when every confirmation was refused."""
+    app, client = env
+    ws = await connect(client, app.token)
+    await ws.action("project.create", {"name": "ign", "type": "circuitpython"})
+    await attach(ws)
+    await answer_pull(ws, {"code.py": b"x"})
+    await ws.wait(lambda m: m.get("kind") == "item" and m["item"].get("text", "").startswith("pulled"))
+    await ws.action("git.commit", {"message": "board"}, "g")
+    root = app.project.path
+    (root / ".git" / "info" / "exclude").write_text("*.log\n")
+    (root / "src" / "readings.log").write_text("precious data\n")
+    await ws.send({"type": "action", "id": "pull", "action": "device.pull", "params": {}})
+    await answer_pull(ws, {"code.py": b"x"})  # the board has no readings.log: the pull would delete it
+    perm = await ws.wait(lambda m: m["type"] == "permission_request", timeout=10)
+    assert perm["detail"]["files"] == ["src/readings.log"]
+    await ws.send({"type": "permission_reply", "request_id": perm["request_id"], "allow": False})
+    res = await ws.wait(lambda m: m.get("type") == "action.result" and m.get("id") == "pull", timeout=10)
+    assert res["ok"] and res["result"] == {"declined": True}
+    assert (root / "src" / "readings.log").read_text() == "precious data\n"
+    # the board has the same file: nothing would change, so nothing is asked
+    await ws.send({"type": "action", "id": "pull2", "action": "device.pull", "params": {}})
+    await answer_pull(ws, {"code.py": b"x", "readings.log": b"precious data\n"})
+    res = await ws.wait(lambda m: m.get("type") == "action.result" and m.get("id") == "pull2", timeout=10)
+    assert res["ok"] and "declined" not in res["result"]
+    assert not [m for m in ws.inbox if m.get("type") == "permission_request"]

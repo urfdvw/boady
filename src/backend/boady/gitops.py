@@ -40,6 +40,13 @@ async def has_commits(repo: Path) -> bool:
     return res.ok
 
 
+async def ignored(repo: Path) -> list[str]:
+    """Untracked files git ignores (.gitignore, .git/info/exclude, core.excludesFile):
+    git never shows them as changes, and nothing in git can bring them back."""
+    out = await git(repo, "ls-files", "-z", "--others", "--ignored", "--exclude-standard")
+    return sorted(p for p in out.split("\0") if p)
+
+
 async def status(repo: Path) -> list[dict[str, str]]:
     """Changed files: [{path, status}] with status in added/modified/deleted/renamed."""
     out = await git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all")
