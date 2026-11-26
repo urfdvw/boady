@@ -11,6 +11,7 @@ see Specs/additional_specs.md, decision D3.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from pathlib import Path
@@ -97,13 +98,44 @@ def parse_command(command: str) -> list[str] | None:
 
 def parse_bash(command: str) -> list[str] | None:
     """Split a whitelisted command; None if it uses shell features."""
-    if any(m in command for m in SHELL_META):
+    if any(m in command for m in SHELL_META) or _expands(command):
         return None
     try:
         argv = shlex.split(command)
     except ValueError:
         return None
     return argv or None
+
+
+_BRACE = re.compile(r"\{[^{}]*(,|\.\.)[^{}]*\}")
+
+
+def _expands(command: str) -> bool:
+    """Whether the shell would expand something in ``command`` to a value the checks
+    cannot see (review 18): ``$`` and backticks outside single quotes, and outside any
+    quotes also wildcards (``* ? [``) and brace expansion (``{a,b}``, ``{1..3}``).
+    Quoting makes them literal: ``'src/*.py'`` is fine."""
+    quote = None
+    plain = []  # the unquoted text, to look for braces
+    for ch in command:
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            continue
+        if quote == '"':
+            if ch == '"':
+                quote = None
+            elif ch in "$`":
+                return True
+            continue
+        if ch in "'\"":
+            quote = ch
+            plain.append(" ")
+            continue
+        if ch in "$`*?[":
+            return True
+        plain.append(ch)
+    return bool(_BRACE.search("".join(plain)))
 
 
 def _circup_path_ok(argv: list[str], root: Path) -> bool:
@@ -141,6 +173,10 @@ def _args_leave_root(argv: list[str], root: Path) -> bool:
         if a.startswith("/") or a.startswith("~") or ".." in Path(a).parts:
             if not _inside(root, a.replace("~", str(Path.home()), 1)):
                 return True
+        # a plain relative name that exists counts by where it really leads: a link in the
+        # project to a file outside is outside (review 18: circup install ./sensor.py)
+        elif a and os.path.lexists(root / a) and not is_within(root / a, root):
+            return True
     return False
 
 

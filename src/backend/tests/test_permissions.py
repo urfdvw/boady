@@ -164,3 +164,30 @@ def test_git_literal_pathspecs_is_the_one_global_option(tmp_path):
     for cmd in (f"{lit} -c core.pager=x log", f"{lit} -C / status", f"{lit} --literal-pathspecs status",
                 "git --glob-pathspecs status", f"{lit} config user.name x", f"{lit} diff --output=/tmp/x", lit):
         assert hard_block("Bash", bash(cmd), tmp_path), cmd
+
+
+def test_paths_and_shell_expansions_cannot_reach_outside_unasked(tmp_path):
+    """Review 18, finding 1: a link in the project to an outside file, installed by circup
+    as a local module, was auto-allowed; so was anything hidden behind $VAR."""
+    root = tmp_path / "proj"
+    (root / "src").mkdir(parents=True)
+    outside = tmp_path / "secret.py"
+    outside.write_text("SECRET = 1\n")
+    (root / "sensor.py").symlink_to(outside)
+    (root / "local.py").write_text("X = 1\n")
+
+    def bash(cmd):
+        return {"command": cmd}
+
+    cmd = "circup --offline --path src install ./sensor.py"
+    assert hard_block("Bash", bash(cmd), root) is None and classify("Bash", bash(cmd), root) == "ask"
+    assert classify("Bash", bash("circup --offline --path src install -r sensor.py"), root) == "ask"
+    assert classify("Bash", bash("circup --offline --path src install ./local.py"), root) == "allow"
+    assert classify("Bash", bash("git diff --no-index -- local.py sensor.py"), root) == "ask"
+    # expansions the checks cannot see are refused outright; quoted they are literal
+    for cmd in ("circup --path src install $HOME/x.py", 'git log -- "$HOME"', "git log -- `pwd`",
+                "git diff -- src/*.py", "git diff -- src/?.py", "git diff -- src/[ab].py", "git diff -- {..,src}/x.py",
+                "git diff -- src/{a,b}.py"):
+        assert hard_block("Bash", bash(cmd), root), cmd
+    for cmd in ("git diff -- 'src/*.py'", "git log -1 --format='%H $x'", "git show HEAD@{1}", "git log --oneline -n 3"):
+        assert hard_block("Bash", bash(cmd), root) is None, cmd
